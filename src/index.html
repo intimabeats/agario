@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enhanced Agar.io Clone</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="game-container">
+    <div id="start-screen">
+      <h1>Enhanced Agar.io</h1>
+      <div class="game-description">
+        <p>An improved version of the classic cell-eating game with new features!</p>
+      </div>
+      
+      <div class="settings-container">
+        <div class="player-settings">
+          <input type="text" id="player-name" placeholder="Enter your name" maxlength="15">
+          
+          <div class="color-picker">
+            <span>Choose color:</span>
+            <div class="color-options">
+              <div class="color-option" style="background-color: #ff5252;" data-color="#ff5252"></div>
+              <div class="color-option" style="background-color: #4caf50;" data-color="#4caf50"></div>
+              <div class="color-option" style="background-color: #2196f3;" data-color="#2196f3"></div>
+              <div class="color-option" style="background-color: #ff9800;" data-color="#ff9800"></div>
+              <div class="color-option" style="background-color: #9c27b0;" data-color="#9c27b0"></div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="game-mode-selector">
+          <span>Game Mode:</span>
+          <div class="game-modes">
+            <div class="game-mode selected" data-mode="classic">
+              <h3>Classic</h3>
+              <p>The original gameplay experience</p>
+            </div>
+            <div class="game-mode" data-mode="battle-royale">
+              <h3>Battle Royale</h3>
+              <p>Shrinking safe zone, last cell standing</p>
+            </div>
+            <div class="game-mode" data-mode="teams">
+              <h3>Teams</h3>
+              <p>Join forces with other players</p>
+            </div>
+          </div>
+        </div>
+        
+        <div class="audio-settings">
+          <div class="setting">
+            <label for="sound-toggle">Sound Effects:</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="sound-toggle" checked>
+              <span class="slider"></span>
+            </div>
+          </div>
+          <div class="setting">
+            <label for="music-toggle">Background Music:</label>
+            <div class="toggle-switch">
+              <input type="checkbox" id="music-toggle" checked>
+              <span class="slider"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <button id="start-button">Play</button>
+      
+      <div class="instructions">
+        <h3>How to Play</h3>
+        <div class="controls">
+          <div class="control">
+            <div class="key">Mouse</div>
+            <div class="action">Move your cell</div>
+          </div>
+          <div class="control">
+            <div class="key">Space</div>
+            <div class="action">Split cell</div>
+          </div>
+          <div class="control">
+            <div class="key">W</div>
+            <div class="action">Eject mass</div>
+          </div>
+          <div class="control">
+            <div class="key">P</div>
+            <div class="action">Pause game</div>
+          </div>
+        </div>
+        <div class="tips">
+          <p>• Eat smaller cells and food to grow</p>
+          <p>• Avoid larger cells or you'll be eaten</p>
+          <p>• Collect power-ups for special abilities</p>
+          <p>• Viruses can split larger cells</p>
+          <p>• Level up to increase your base size</p>
+        </div>
+      </div>
+    </div>
+    
+    <div id="game-ui">
+      <div id="score-container">
+        <div class="stat">Score: <span id="score">0</span></div>
+        <div class="stat">Level: <span id="level">1</span></div>
+        <div class="stat">XP: <span id="xp">0</span>/<span id="next-level-xp">1000</span></div>
+      </div>
+      
+      <div id="leaderboard">
+        <h3>Leaderboard</h3>
+        <ol id="leaders"></ol>
+      </div>
+      
+      <div id="game-controls">
+        <button id="pause-button">Pause</button>
+        <button id="restart-button">Restart</button>
+      </div>
+      
+      <div id="power-up-indicators"></div>
+    </div>
+    
+    <div id="game-over">
+      <h2>Game Over</h2>
+      <div class="stats">
+        <p>Your final score: <span id="final-score">0</span></p>
+        <p>Level reached: <span id="final-level">1</span></p>
+        <p>Time survived: <span id="time-survived">0:00</span></p>
+        <p>Players eaten: <span id="players-eaten">0</span></p>
+      </div>
+      <button id="play-again-button">Play Again</button>
+    </div>
+    
+    <div id="pause-menu">
+      <h2>Game Paused</h2>
+      <div class="pause-options">
+        <button id="resume-button">Resume</button>
+        <div class="audio-controls">
+          <div class="volume-control">
+            <label for="sound-volume">Sound Volume:</label>
+            <input type="range" id="sound-volume" min="0" max="100" value="50">
+          </div>
+          <div class="volume-control">
+            <label for="music-volume">Music Volume:</label>
+            <input type="range" id="music-volume" min="0" max="100" value="30">
+          </div>
+        </div>
+        <button id="quit-button">Quit Game</button>
+      </div>
+    </div>
+    
+    <canvas id="game-canvas"></canvas>
+  </div>
+  
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
