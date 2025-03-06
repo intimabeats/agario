@@ -25,7 +25,22 @@ export class AI {
     
     // State
     this.isDead = false;
-    this.cells = [{ x: this.x, y: this.y, radius: this.radius, mass: this.mass }];
+    this.cells = [{
+      x: this.x,
+      y: this.y,
+      radius: this.radius,
+      mass: this.mass,
+      // Cell membrane properties
+      membrane: {
+        points: 20, // Number of points around the membrane
+        elasticity: 0.3, // How elastic the membrane is (0-1)
+        distortion: 0.15, // Maximum distortion amount
+        oscillation: 0.05, // Natural oscillation amount
+        oscillationSpeed: 1.5, // Speed of oscillation
+        phase: Math.random() * Math.PI * 2, // Random starting phase
+        vertices: [] // Will store the membrane vertices
+      }
+    }];
     
     // AI behavior
     this.state = 'wander'; // wander, chase, flee, split
@@ -37,6 +52,38 @@ export class AI {
     // Ejection settings
     this.ejectCooldown = 0;
     this.ejectCooldownTime = 500; // 500ms between ejections (slower than player)
+    
+    // Cell collision physics
+    this.cellCollisionElasticity = 0.7; // How bouncy cell collisions are (0-1)
+    this.cellRepulsionForce = 0.15; // Force applied when cells collide
+    
+    // Initialize cell membranes
+    this.initCellMembranes();
+  }
+  
+  initCellMembranes() {
+    this.cells.forEach(cell => {
+      this.initCellMembrane(cell);
+    });
+  }
+  
+  initCellMembrane(cell) {
+    const { membrane } = cell;
+    membrane.vertices = [];
+    
+    // Create initial membrane vertices in a perfect circle
+    for (let i = 0; i < membrane.points; i++) {
+      const angle = (i / membrane.points) * Math.PI * 2;
+      membrane.vertices.push({
+        angle,
+        baseX: Math.cos(angle),
+        baseY: Math.sin(angle),
+        distortionX: 0,
+        distortionY: 0,
+        velocityX: 0,
+        velocityY: 0
+      });
+    }
   }
   
   update(deltaTime) {
@@ -55,6 +102,9 @@ export class AI {
     // Update cells
     this.updateCells(deltaTime);
     
+    // Update cell membranes
+    this.updateCellMembranes(deltaTime);
+    
     // Update score
     this.score = this.cells.reduce((total, cell) => total + cell.mass, 0);
     
@@ -62,6 +112,71 @@ export class AI {
     if (this.ejectCooldown > 0) {
       this.ejectCooldown -= deltaTime * 1000;
     }
+  }
+  
+  updateCellMembranes(deltaTime) {
+    const time = Date.now() / 1000;
+    
+    this.cells.forEach(cell => {
+      const { membrane } = cell;
+      
+      // Update membrane phase
+      membrane.phase += membrane.oscillationSpeed * deltaTime;
+      
+      // Update each vertex
+      membrane.vertices.forEach(vertex => {
+        // Apply natural oscillation
+        const oscillation = membrane.oscillation * Math.sin(vertex.angle * 3 + membrane.phase);
+        
+        // Apply elasticity to return to base shape
+        vertex.velocityX += -vertex.distortionX * membrane.elasticity;
+        vertex.velocityY += -vertex.distortionY * membrane.elasticity;
+        
+        // Apply damping
+        vertex.velocityX *= 0.9;
+        vertex.velocityY *= 0.9;
+        
+        // Update distortion
+        vertex.distortionX += vertex.velocityX * deltaTime * 5;
+        vertex.distortionY += vertex.velocityY * deltaTime * 5;
+        
+        // Limit maximum distortion
+        const distortionLength = Math.sqrt(vertex.distortionX * vertex.distortionX + vertex.distortionY * vertex.distortionY);
+        if (distortionLength > membrane.distortion) {
+          const scale = membrane.distortion / distortionLength;
+          vertex.distortionX *= scale;
+          vertex.distortionY *= scale;
+        }
+        
+        // Add oscillation to distortion
+        vertex.distortionX += vertex.baseX * oscillation;
+        vertex.distortionY += vertex.baseY * oscillation;
+      });
+    });
+  }
+  
+  distortMembrane(cell, dirX, dirY, amount) {
+    const { membrane } = cell;
+    
+    // Normalize direction
+    const length = Math.sqrt(dirX * dirX + dirY * dirY);
+    if (length > 0) {
+      dirX /= length;
+      dirY /= length;
+    }
+    
+    // Find vertices in the direction of impact
+    membrane.vertices.forEach(vertex => {
+      // Calculate dot product to determine if vertex is in impact direction
+      const dot = vertex.baseX * dirX + vertex.baseY * dirY;
+      
+      // Apply force to vertices in the impact direction
+      if (dot > 0.3) {
+        const force = dot * amount;
+        vertex.velocityX += dirX * force;
+        vertex.velocityY += dirY * force;
+      }
+    });
   }
   
   updateSpeedBasedOnSize() {
@@ -331,6 +446,9 @@ export class AI {
           if (this.game.particles) {
             this.game.particles.createFoodParticles(food.x, food.y, food.color);
           }
+          
+          // Distort membrane in the direction of the food
+          this.distortMembrane(cell, -dx/distance, -dy/distance, 0.2);
         }
       });
       
@@ -362,6 +480,9 @@ export class AI {
             // Damage the cell if it's too small
             cell.mass *= 0.75;
             cell.radius = Math.sqrt(cell.mass / Math.PI);
+            
+            // Distort membrane on impact
+            this.distortMembrane(cell, dx/distance, dy/distance, 0.8);
           }
         }
       });
@@ -391,6 +512,9 @@ export class AI {
               if (this.game.particles) {
                 this.game.particles.createEatParticles(playerCell.x, playerCell.y, this.game.player.color);
               }
+              
+              // Distort membrane
+              this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
             } 
             // Player eats AI
             else if (playerCell.radius > cell.radius * 1.15) {
@@ -406,6 +530,24 @@ export class AI {
               // Check if AI is dead
               if (this.cells.length === 0) {
                 this.isDead = true;
+              }
+            }
+            // Cells are similar size - bounce off each other
+            else {
+              // Calculate repulsion vector
+              const overlap = cell.radius + playerCell.radius - distance;
+              if (overlap > 0) {
+                // Normalize direction
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Apply repulsion force
+                const repulsionForce = overlap * this.cellRepulsionForce;
+                cell.x += nx * repulsionForce;
+                cell.y += ny * repulsionForce;
+                
+                // Distort membrane on collision
+                this.distortMembrane(cell, nx, ny, 0.3);
               }
             }
           }
@@ -437,6 +579,9 @@ export class AI {
               if (this.game.particles) {
                 this.game.particles.createEatParticles(otherCell.x, otherCell.y, ai.color);
               }
+              
+              // Distort membrane
+              this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
             } 
             // Other AI eats this AI
             else if (otherCell.radius > cell.radius * 1.15) {
@@ -452,6 +597,24 @@ export class AI {
               // Check if AI is dead
               if (this.cells.length === 0) {
                 this.isDead = true;
+              }
+            }
+            // Cells are similar size - bounce off each other
+            else {
+              // Calculate repulsion vector
+              const overlap = cell.radius + otherCell.radius - distance;
+              if (overlap > 0) {
+                // Normalize direction
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Apply repulsion force
+                const repulsionForce = overlap * this.cellRepulsionForce;
+                cell.x += nx * repulsionForce;
+                cell.y += ny * repulsionForce;
+                
+                // Distort membrane on collision
+                this.distortMembrane(cell, nx, ny, 0.3);
               }
             }
           }
@@ -498,7 +661,79 @@ export class AI {
       }
     });
     
+    // Handle cell-to-cell collisions with improved physics
+    this.handleCellCollisions(deltaTime);
+    
     // Merge cells if they are close enough and enough time has passed
+    this.mergeCells();
+    
+    // Update AI radius to the largest cell
+    this.radius = Math.max(...this.cells.map(cell => cell.radius));
+  }
+  
+  handleCellCollisions(deltaTime) {
+    // Check collisions between AI's own cells
+    for (let i = 0; i < this.cells.length; i++) {
+      for (let j = i + 1; j < this.cells.length; j++) {
+        const cell1 = this.cells[i];
+        const cell2 = this.cells[j];
+        
+        const dx = cell1.x - cell2.x;
+        const dy = cell1.y - cell2.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDistance = cell1.radius + cell2.radius;
+        
+        // Check if cells can merge
+        const now = Date.now();
+        const canMerge = (!cell1.splitTime || now - cell1.splitTime > 15000) && 
+                         (!cell2.splitTime || now - cell2.splitTime > 15000);
+        
+        // If cells are overlapping
+        if (distance < minDistance) {
+          if (canMerge && distance < cell1.radius * 0.5) {
+            // Cells are close enough to merge
+            // This will be handled in mergeCells()
+          } else {
+            // Cells should bounce off each other
+            // Calculate overlap
+            const overlap = minDistance - distance;
+            
+            // Only apply repulsion if there's actual overlap
+            if (overlap > 0 && distance > 0) {
+              // Normalize direction
+              const nx = dx / distance;
+              const ny = dy / distance;
+              
+              // Calculate repulsion force based on mass
+              const totalMass = cell1.mass + cell2.mass;
+              const cell1Ratio = cell2.mass / totalMass;
+              const cell2Ratio = cell1.mass / totalMass;
+              
+              // Apply repulsion with elasticity
+              const repulsionForce = overlap * this.cellRepulsionForce;
+              
+              cell1.x += nx * repulsionForce * cell1Ratio;
+              cell1.y += ny * repulsionForce * cell1Ratio;
+              cell2.x -= nx * repulsionForce * cell2Ratio;
+              cell2.y -= ny * repulsionForce * cell2Ratio;
+              
+              // Distort membranes on collision
+              this.distortMembrane(cell1, nx, ny, 0.3);
+              this.distortMembrane(cell2, -nx, -ny, 0.3);
+              
+              // Keep cells within world bounds
+              cell1.x = Math.max(cell1.radius, Math.min(this.game.worldSize - cell1.radius, cell1.x));
+              cell1.y = Math.max(cell1.radius, Math.min(this.game.worldSize - cell1.radius, cell1.y));
+              cell2.x = Math.max(cell2.radius, Math.min(this.game.worldSize - cell2.radius, cell2.x));
+              cell2.y = Math.max(cell2.radius, Math.min(this.game.worldSize - cell2.radius, cell2.y));
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  mergeCells() {
     const now = Date.now();
     const mergeTime = 15000; // 15 seconds after splitting
     
@@ -517,8 +752,18 @@ export class AI {
         
         // Merge if cells are close enough
         if (distance < cell1.radius * 0.5) {
-          cell1.mass += cell2.mass;
+          // Calculate new position weighted by mass
+          const totalMass = cell1.mass + cell2.mass;
+          const newX = (cell1.x * cell1.mass + cell2.x * cell2.mass) / totalMass;
+          const newY = (cell1.y * cell1.mass + cell2.y * cell2.mass) / totalMass;
+          
+          // Update cell1 with merged properties
+          cell1.mass = totalMass;
           cell1.radius = Math.sqrt(cell1.mass / Math.PI);
+          cell1.x = newX;
+          cell1.y = newY;
+          
+          // Remove cell2
           this.cells.splice(j, 1);
           j--;
           
@@ -526,15 +771,17 @@ export class AI {
           if (this.game.particles) {
             this.game.particles.createMergeParticles(cell2.x, cell2.y, this.color);
           }
+          
+          // Distort membrane during merge
+          this.distortMembrane(cell1, 0, 0, 0.6);
         }
       }
     }
-    
-    // Update AI radius to the largest cell
-    this.radius = Math.max(...this.cells.map(cell => cell.radius));
   }
   
   split() {
+    if (this.cells.length >= 8) return;
+    
     const now = Date.now();
     this.splitCooldown = now + 10000; // 10 seconds cooldown
     this.lastSplitTime = now;
@@ -580,15 +827,34 @@ export class AI {
     cell.mass = newMass;
     cell.radius = Math.sqrt(cell.mass / Math.PI);
     
+    // Position the new cell slightly away from the original to prevent immediate overlap
+    const offsetDistance = cell.radius * 0.2;
+    
     const newCell = {
-      x: cell.x,
-      y: cell.y,
+      x: cell.x + dirX * offsetDistance,
+      y: cell.y + dirY * offsetDistance,
       radius: cell.radius,
       mass: newMass,
       velocityX: dirX * 10,
       velocityY: dirY * 10,
-      splitTime: Date.now()
+      splitTime: Date.now(),
+      membrane: {
+        points: cell.membrane.points,
+        elasticity: cell.membrane.elasticity,
+        distortion: cell.membrane.distortion,
+        oscillation: cell.membrane.oscillation,
+        oscillationSpeed: cell.membrane.oscillationSpeed,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      }
     };
+    
+    // Initialize membrane for new cell
+    this.initCellMembrane(newCell);
+    
+    // Distort both membranes in the split direction
+    this.distortMembrane(cell, -dirX, -dirY, 0.5);
+    this.distortMembrane(newCell, dirX, dirY, 0.5);
     
     this.cells.push(newCell);
     
@@ -645,10 +911,14 @@ export class AI {
           cell.mass -= ejectedMass;
           cell.radius = Math.sqrt(cell.mass / Math.PI);
           
+          // Calculate ejection position (further from cell)
+          const ejectionX = cell.x + dirX * cell.radius * 1.2;
+          const ejectionY = cell.y + dirY * cell.radius * 1.2;
+          
           // Create ejected mass as food
           this.game.foods.push({
-            x: cell.x + dirX * cell.radius,
-            y: cell.y + dirY * cell.radius,
+            x: ejectionX,
+            y: ejectionY,
             radius: 4,
             mass: ejectedMass * 0.8,
             color: this.color,
@@ -656,6 +926,7 @@ export class AI {
             velocityY: dirY * 8,
             ejectedBy: this.id,
             ejectionTime: Date.now(),
+            game: this.game,
             update: function(deltaTime) {
               // Update position based on velocity
               const elapsed = Date.now() - this.ejectionTime;
@@ -665,8 +936,10 @@ export class AI {
               this.y += this.velocityY * slowdownFactor * deltaTime;
               
               // Keep within world bounds
-              this.x = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.x));
-              this.y = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.y));
+              if (this.game) {
+                this.x = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.x));
+                this.y = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.y));
+              }
             },
             draw: function(ctx) {
               ctx.beginPath();
@@ -679,13 +952,16 @@ export class AI {
           // Create particles
           if (this.game.particles) {
             this.game.particles.createEjectParticles(
-              cell.x + dirX * cell.radius, 
-              cell.y + dirY * cell.radius, 
+              ejectionX, 
+              ejectionY, 
               this.color, 
               dirX, 
               dirY
             );
           }
+          
+          // Distort membrane in ejection direction
+          this.distortMembrane(cell, dirX, dirY, 0.3);
         }
       }
     });
@@ -696,6 +972,9 @@ export class AI {
     this.cells.forEach(cell => {
       cell.mass = Math.max(this.baseRadius, cell.mass - amount * cell.mass);
       cell.radius = Math.sqrt(cell.mass / Math.PI);
+      
+      // Distort membrane to show damage
+      this.distortMembrane(cell, 0, 0, 0.5);
     });
     
     // Create damage effect
@@ -707,16 +986,8 @@ export class AI {
   draw(ctx) {
     // Draw cells
     this.cells.forEach(cell => {
-      // Draw cell body
-      ctx.beginPath();
-      ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
-      ctx.fillStyle = this.color;
-      ctx.fill();
-      
-      // Draw cell border
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-      ctx.stroke();
+      // Draw cell with membrane
+      this.drawCellWithMembrane(ctx, cell);
       
       // Draw AI name
       if (cell.radius > 20) {
@@ -742,5 +1013,66 @@ export class AI {
         ctx.stroke();
       }
     });
+  }
+  
+  drawCellWithMembrane(ctx, cell) {
+    const { membrane } = cell;
+    
+    // Start drawing the membrane
+    ctx.beginPath();
+    
+    // Draw membrane using vertices
+    if (membrane.vertices.length > 0) {
+      const firstVertex = membrane.vertices[0];
+      const startX = cell.x + (firstVertex.baseX + firstVertex.distortionX) * cell.radius;
+      const startY = cell.y + (firstVertex.baseY + firstVertex.distortionY) * cell.radius;
+      
+      ctx.moveTo(startX, startY);
+      
+      // Draw the rest of the vertices
+      for (let i = 1; i < membrane.vertices.length; i++) {
+        const vertex = membrane.vertices[i];
+        const x = cell.x + (vertex.baseX + vertex.distortionX) * cell.radius;
+        const y = cell.y + (vertex.baseY + vertex.distortionY) * cell.radius;
+        
+        ctx.lineTo(x, y);
+      }
+      
+      // Close the path
+      ctx.closePath();
+    } else {
+      // Fallback to circle if no vertices
+      ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
+    }
+    
+    // Fill with cell color
+    ctx.fillStyle = this.color;
+    ctx.fill();
+    
+    // Draw cell border
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.stroke();
+    
+    // Draw cell nucleus
+    ctx.beginPath();
+    ctx.arc(cell.x, cell.y, cell.radius * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fill();
+    
+    // Draw cytoplasm details (small circles inside the cell)
+    const numDetails = Math.floor(cell.radius / 10);
+    for (let i = 0; i < numDetails; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * cell.radius * 0.7;
+      const detailX = cell.x + Math.cos(angle) * distance;
+      const detailY = cell.y + Math.sin(angle) * distance;
+      const detailSize = cell.radius * 0.05 + Math.random() * cell.radius * 0.05;
+      
+      ctx.beginPath();
+      ctx.arc(detailX, detailY, detailSize, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.fill();
+    }
   }
 }

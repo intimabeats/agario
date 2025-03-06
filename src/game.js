@@ -36,6 +36,11 @@ export class Game {
     this.virusCount = 25;
     this.powerUpCount = 12; // Increased power-up count
     
+    // Physics settings
+    this.cellCollisionElasticity = 0.7; // How bouncy cell collisions are (0-1)
+    this.cellRepulsionForce = 0.15; // Force applied when cells collide
+    this.foodAttractionRadius = 5; // Radius around cells where food starts to be attracted
+    
     // Visual effects
     this.particles = new ParticleSystem(this);
     this.backgroundPattern = this.createBackgroundPattern();
@@ -48,7 +53,9 @@ export class Game {
     this.stats = {
       fps: 0,
       frameCount: 0,
-      lastFpsUpdate: 0
+      lastFpsUpdate: 0,
+      entitiesRendered: 0,
+      collisionsChecked: 0
     };
     
     // Animation frame
@@ -72,6 +79,20 @@ export class Game {
       red: { score: 0, players: [] },
       blue: { score: 0, players: [] },
       green: { score: 0, players: [] }
+    };
+    
+    // Spatial partitioning for collision detection optimization
+    this.gridCellSize = 200; // Size of each grid cell
+    this.spatialGrid = {}; // Will store entities by grid cell
+    
+    // Performance optimization
+    this.lastFoodGenerationTime = 0;
+    this.foodGenerationInterval = 100; // Generate food in batches every 100ms
+    this.visibleEntities = {
+      foods: [],
+      ais: [],
+      viruses: [],
+      powerUps: []
     };
   }
   
@@ -175,6 +196,10 @@ export class Game {
       this.stats.fps = this.stats.frameCount;
       this.stats.frameCount = 0;
       this.stats.lastFpsUpdate = now;
+      
+      // Reset stats
+      this.stats.entitiesRendered = 0;
+      this.stats.collisionsChecked = 0;
     }
     
     if (this.isPaused) {
@@ -200,6 +225,9 @@ export class Game {
     if (this.gameMode === 'teams') {
       this.updateTeamScores();
     }
+    
+    // Update spatial grid
+    this.updateSpatialGrid();
     
     // Update player
     if (this.player && !this.player.isDead) {
@@ -249,6 +277,11 @@ export class Game {
       food.update(deltaTime);
     });
     
+    // Update viruses
+    this.viruses.forEach(virus => {
+      virus.update(deltaTime);
+    });
+    
     // Update power-ups
     this.powerUps.forEach(powerUp => {
       powerUp.update(deltaTime);
@@ -283,13 +316,21 @@ export class Game {
       }
     }
     
-    // Replenish food
-    while (this.foods.length < this.foodCount) {
-      this.foods.push(new Food(
-        Math.random() * this.worldSize,
-        Math.random() * this.worldSize,
-        this
-      ));
+    // Replenish food in batches for better performance
+    const now = Date.now();
+    if (now - this.lastFoodGenerationTime > this.foodGenerationInterval) {
+      this.lastFoodGenerationTime = now;
+      
+      const foodNeeded = this.foodCount - this.foods.length;
+      const batchSize = Math.min(foodNeeded, 50); // Generate up to 50 food items at once
+      
+      for (let i = 0; i < batchSize; i++) {
+        this.foods.push(new Food(
+          Math.random() * this.worldSize,
+          Math.random() * this.worldSize,
+          this
+        ));
+      }
     }
     
     // Replenish viruses
@@ -314,6 +355,174 @@ export class Game {
     if (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active && this.gameTime > 30) {
       this.startBattleRoyale();
     }
+    
+    // Update visible entities for rendering optimization
+    this.updateVisibleEntities();
+  }
+  
+  updateSpatialGrid() {
+  // Clear the grid
+  this.spatialGrid = {};
+  
+  // Helper function to add entity to grid
+  const addToGrid = (entity, type) => {
+    const cellX = Math.floor(entity.x / this.gridCellSize);
+    const cellY = Math.floor(entity.y / this.gridCellSize);
+    const cellKey = `${cellX},${cellY}`;
+    
+    // Inicialize o objeto da célula se ele não existir
+    if (!this.spatialGrid[cellKey]) {
+      this.spatialGrid[cellKey] = { 
+        foods: [], 
+        ais: [], 
+        viruses: [], 
+        powerUps: [],
+        player: [] // Adicione esta propriedade que estava faltando
+      };
+    }
+    
+    // Verifique se o array para este tipo existe
+    if (!this.spatialGrid[cellKey][type]) {
+      this.spatialGrid[cellKey][type] = [];
+    }
+    
+    this.spatialGrid[cellKey][type].push(entity);
+  };
+  
+  // Add foods to grid
+  this.foods.forEach(food => addToGrid(food, 'foods'));
+  
+  // Add AIs to grid
+  this.ais.forEach(ai => {
+    if (ai && ai.cells) {  // Verificar se ai e ai.cells existem
+      ai.cells.forEach(cell => {
+        if (cell) {  // Verificar se cell existe
+          // Create a temporary entity with the cell's position and radius
+          const cellEntity = {
+            x: cell.x,
+            y: cell.y,
+            radius: cell.radius,
+            parent: ai,
+            cell: cell
+          };
+          addToGrid(cellEntity, 'ais');
+        }
+      });
+    }
+  });
+  
+  // Add viruses to grid
+  this.viruses.forEach(virus => {
+    if (virus) {  // Verificar se virus existe
+      addToGrid(virus, 'viruses');
+    }
+  });
+  
+  // Add power-ups to grid
+  this.powerUps.forEach(powerUp => {
+    if (powerUp) {  // Verificar se powerUp existe
+      addToGrid(powerUp, 'powerUps');
+    }
+  });
+  
+  // Add player cells to grid
+  if (this.player && !this.player.isDead && this.player.cells) {
+    this.player.cells.forEach(cell => {
+      if (cell) {  // Verificar se cell existe
+        // Create a temporary entity with the cell's position and radius
+        const cellEntity = {
+          x: cell.x,
+          y: cell.y,
+          radius: cell.radius,
+          parent: this.player,
+          cell: cell
+        };
+        addToGrid(cellEntity, 'player');
+      }
+    });
+  }
+}
+
+  
+ getEntitiesInRange(x, y, radius, types = ['foods', 'ais', 'viruses', 'powerUps', 'player']) {
+  const result = {};
+  types.forEach(type => result[type] = []);
+  
+  // Calculate grid cells that could contain entities within range
+  const cellRadius = Math.ceil(radius / this.gridCellSize) + 1;
+  const centerCellX = Math.floor(x / this.gridCellSize);
+  const centerCellY = Math.floor(y / this.gridCellSize);
+  
+  for (let cellX = centerCellX - cellRadius; cellX <= centerCellX + cellRadius; cellX++) {
+    for (let cellY = centerCellY - cellRadius; cellY <= centerCellY + cellRadius; cellY++) {
+      const cellKey = `${cellX},${cellY}`;
+      
+      if (this.spatialGrid[cellKey]) {
+        types.forEach(type => {
+          if (this.spatialGrid[cellKey][type]) {  // Verificar se o array para este tipo existe
+            this.spatialGrid[cellKey][type].forEach(entity => {
+              if (entity) {  // Verificar se entity existe
+                const dx = entity.x - x;
+                const dy = entity.y - y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance <= radius + entity.radius) {
+                  result[type].push(entity);
+                }
+              }
+            });
+          }
+        });
+      }
+    }
+  }
+  
+  return result;
+}
+
+  
+  updateVisibleEntities() {
+    // Calculate viewport bounds with some margin
+    const viewportLeft = this.camera.x - this.width / (2 * this.camera.scale) - 100;
+    const viewportRight = this.camera.x + this.width / (2 * this.camera.scale) + 100;
+    const viewportTop = this.camera.y - this.height / (2 * this.camera.scale) - 100;
+    const viewportBottom = this.camera.y + this.height / (2 * this.camera.scale) + 100;
+    
+    // Filter visible entities
+    this.visibleEntities.foods = this.foods.filter(food => 
+      food.x + food.radius > viewportLeft &&
+      food.x - food.radius < viewportRight &&
+      food.y + food.radius > viewportTop &&
+      food.y - food.radius < viewportBottom
+    );
+    
+    this.visibleEntities.ais = this.ais.filter(ai => 
+      !ai.isDead && ai.x + ai.radius > viewportLeft &&
+      ai.x - ai.radius < viewportRight &&
+      ai.y + ai.radius > viewportTop &&
+      ai.y - ai.radius < viewportBottom
+    );
+    
+    this.visibleEntities.viruses = this.viruses.filter(virus => 
+      virus.x + virus.radius > viewportLeft &&
+      virus.x - virus.radius < viewportRight &&
+      virus.y + virus.radius > viewportTop &&
+      virus.y - virus.radius < viewportBottom
+    );
+    
+    this.visibleEntities.powerUps = this.powerUps.filter(powerUp => 
+      powerUp.x + powerUp.radius > viewportLeft &&
+      powerUp.x - powerUp.radius < viewportRight &&
+      powerUp.y + powerUp.radius > viewportTop &&
+      powerUp.y - powerUp.radius < viewportBottom
+    );
+    
+    // Update stats
+    this.stats.entitiesRendered = 
+      this.visibleEntities.foods.length + 
+      this.visibleEntities.ais.length + 
+      this.visibleEntities.viruses.length + 
+      this.visibleEntities.powerUps.length;
   }
   
   updateBattleRoyale(deltaTime) {
@@ -393,35 +602,27 @@ export class Game {
       this.drawSafeZone();
     }
     
-    // Draw food
-    this.foods.forEach(food => {
-      if (this.isInViewport(food.x, food.y, food.radius)) {
-        food.draw(this.ctx);
-      }
+    // Draw food (only visible ones)
+    this.visibleEntities.foods.forEach(food => {
+      food.draw(this.ctx);
     });
     
-    // Draw viruses
-    this.viruses.forEach(virus => {
-      if (this.isInViewport(virus.x, virus.y, virus.radius)) {
-        virus.draw(this.ctx);
-      }
+    // Draw viruses (only visible ones)
+    this.visibleEntities.viruses.forEach(virus => {
+      virus.draw(this.ctx);
     });
     
-    // Draw power-ups
-    this.powerUps.forEach(powerUp => {
-      if (this.isInViewport(powerUp.x, powerUp.y, powerUp.radius)) {
-        powerUp.draw(this.ctx);
-      }
+    // Draw power-ups (only visible ones)
+    this.visibleEntities.powerUps.forEach(powerUp => {
+      powerUp.draw(this.ctx);
     });
     
     // Draw particles
     this.particles.draw(this.ctx);
     
-    // Draw AI players
-    this.ais.forEach(ai => {
-      if (!ai.isDead && this.isInViewport(ai.x, ai.y, ai.radius)) {
-        ai.draw(this.ctx);
-      }
+    // Draw AI players (only visible ones)
+    this.visibleEntities.ais.forEach(ai => {
+      ai.draw(this.ctx);
     });
     
     // Draw player
@@ -574,6 +775,9 @@ export class Game {
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     this.ctx.fillText(`FPS: ${this.stats.fps}`, 10, 20);
     
+    // Draw entity count
+    this.ctx.fillText(`Entities: ${this.stats.entitiesRendered}`, 10, 40);
+    
     // Draw minimap
     this.miniMap.draw(this.ctx);
     
@@ -587,7 +791,6 @@ export class Game {
       this.drawBattleRoyaleInfo();
     }
   }
-  
   drawTeamScores() {
     const teamNames = Object.keys(this.teams);
     const scoreHeight = 30;
@@ -626,6 +829,45 @@ export class Game {
     // Draw players remaining
     const playersRemaining = 1 + this.ais.length; // Player + AIs
     this.ctx.fillText(`Players: ${playersRemaining}`, 10, 60);
+    
+    // Draw danger zone indicator
+    if (this.player && !this.player.isDead) {
+      const dx = this.player.x - this.battleRoyaleState.safeZoneX;
+      const dy = this.player.y - this.battleRoyaleState.safeZoneY;
+      const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
+        // Player is outside safe zone - show warning
+        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
+        this.ctx.fillText('WARNING: Outside Safe Zone!', 10, 80);
+        
+        // Draw direction arrow to safe zone
+        const arrowSize = 30;
+        const arrowX = this.width - arrowSize - 20;
+        const arrowY = 80;
+        
+        // Calculate angle to safe zone
+        const angle = Math.atan2(
+          this.battleRoyaleState.safeZoneY - this.player.y,
+          this.battleRoyaleState.safeZoneX - this.player.x
+        );
+        
+        this.ctx.save();
+        this.ctx.translate(arrowX, arrowY);
+        this.ctx.rotate(angle);
+        
+        // Draw arrow
+        this.ctx.beginPath();
+        this.ctx.moveTo(arrowSize / 2, 0);
+        this.ctx.lineTo(-arrowSize / 2, -arrowSize / 3);
+        this.ctx.lineTo(-arrowSize / 2, arrowSize / 3);
+        this.ctx.closePath();
+        this.ctx.fillStyle = 'rgba(0, 200, 255, 0.8)';
+        this.ctx.fill();
+        
+        this.ctx.restore();
+      }
+    }
   }
   
   showAnnouncement(message, duration = 3000) {
@@ -677,6 +919,13 @@ export class Game {
     
     // Smooth scale transition
     this.camera.scale += (targetScale - this.camera.scale) * 0.05;
+    
+    // Add slight camera shake when player is damaged
+    if (this.player.effects.some(effect => effect.type === 'damage')) {
+      const shakeAmount = 5 / this.camera.scale;
+      this.camera.x += (Math.random() * 2 - 1) * shakeAmount;
+      this.camera.y += (Math.random() * 2 - 1) * shakeAmount;
+    }
   }
   
   updateViewport() {
@@ -734,5 +983,132 @@ export class Game {
       '#e91e63', '#3f51b5', '#009688', '#ffeb3b', '#795548'
     ];
     return colors[Math.floor(Math.random() * colors.length)];
+  }
+  
+  // Helper method to check if two circles are colliding
+  checkCircleCollision(x1, y1, r1, x2, y2, r2) {
+    const dx = x1 - x2;
+    const dy = y1 - y2;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    return distance < r1 + r2;
+  }
+  
+  // Helper method to resolve collision between two circles
+  resolveCircleCollision(x1, y1, r1, m1, x2, y2, r2, m2, elasticity = 0.5) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // If circles are not colliding, return original positions
+    if (distance >= r1 + r2) {
+      return { x1, y1, x2, y2 };
+    }
+    
+    // Calculate unit vector along the collision axis
+    const nx = dx / distance;
+    const ny = dy / distance;
+    
+    // Calculate overlap
+    const overlap = r1 + r2 - distance;
+    
+    // Move circles apart based on their mass
+    const totalMass = m1 + m2;
+    const m1Ratio = m2 / totalMass;
+    const m2Ratio = m1 / totalMass;
+    
+    // Apply position correction with elasticity
+    const correction1 = overlap * m1Ratio * elasticity;
+    const correction2 = overlap * m2Ratio * elasticity;
+    
+    const newX1 = x1 - nx * correction1;
+    const newY1 = y1 - ny * correction1;
+    const newX2 = x2 + nx * correction2;
+    const newY2 = y2 + ny * correction2;
+    
+    return { x1: newX1, y1: newY1, x2: newX2, y2: newY2 };
+  }
+  
+  // Helper method to apply attraction between entities
+  applyAttraction(entity1, entity2, strength = 0.1, maxDistance = 200) {
+    const dx = entity2.x - entity1.x;
+    const dy = entity2.y - entity1.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance > 0 && distance < maxDistance) {
+      const force = strength * (1 - distance / maxDistance);
+      const forceX = (dx / distance) * force;
+      const forceY = (dy / distance) * force;
+      
+      return { forceX, forceY };
+    }
+    
+    return { forceX: 0, forceY: 0 };
+  }
+  
+  // Helper method to check if a point is inside a cell with membrane
+  isPointInCell(x, y, cell) {
+    // Simple circle check first for performance
+    const dx = x - cell.x;
+    const dy = y - cell.y;
+    const distanceSquared = dx * dx + dy * dy;
+    
+    if (distanceSquared > cell.radius * cell.radius) {
+      return false; // Definitely outside
+    }
+    
+    // If cell has a membrane, do more precise check
+    if (cell.membrane && cell.membrane.vertices && cell.membrane.vertices.length > 0) {
+      // Convert point to local cell coordinates
+      const localX = dx / cell.radius;
+      const localY = dy / cell.radius;
+      
+      // Get angle of point
+      const angle = Math.atan2(localY, localX);
+      
+      // Find the two vertices that surround this angle
+      let v1, v2;
+      for (let i = 0; i < cell.membrane.vertices.length; i++) {
+        const vertex = cell.membrane.vertices[i];
+        if (vertex.angle > angle) {
+          v2 = vertex;
+          v1 = cell.membrane.vertices[i > 0 ? i - 1 : cell.membrane.vertices.length - 1];
+          break;
+        }
+      }
+      
+      // If we didn't find vertices, use the last and first
+      if (!v1 || !v2) {
+        v1 = cell.membrane.vertices[cell.membrane.vertices.length - 1];
+        v2 = cell.membrane.vertices[0];
+      }
+      
+      // Calculate the membrane radius at this angle by interpolating between vertices
+      const t = (angle - v1.angle) / (v2.angle - v1.angle);
+      const r1 = 1 + v1.distortionX * Math.cos(v1.angle) + v1.distortionY * Math.sin(v1.angle);
+      const r2 = 1 + v2.distortionX * Math.cos(v2.angle) + v2.distortionY * Math.sin(v2.angle);
+      const membraneRadius = r1 + t * (r2 - r1);
+      
+      // Check if point is inside membrane
+      const pointRadius = Math.sqrt(localX * localX + localY * localY);
+      return pointRadius <= membraneRadius;
+    }
+    
+    // Fallback to simple circle check
+    return true;
+  }
+  
+  // Helper method to create a visual effect at a position
+  createEffect(x, y, type, options = {}) {
+    switch (type) {
+      case 'explosion':
+        this.particles.createExplosion(x, y, options.color || '#ff5252', options.size || 30);
+        break;
+      case 'ripple':
+        this.particles.createRipple(x, y, options.color || 'rgba(255, 255, 255, 0.5)', options.size || 50);
+        break;
+      case 'text':
+        this.particles.createTextEffect(x, y, options.text || '', options.color || 'white');
+        break;
+    }
   }
 }

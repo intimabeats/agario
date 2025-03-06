@@ -1,4 +1,3 @@
-
 export function setupControls(game, player) {
   // Mouse movement
   game.canvas.addEventListener('mousemove', (e) => {

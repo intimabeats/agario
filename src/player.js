@@ -1,4 +1,3 @@
-
 export class Player {
   constructor(name, color, game) {
     this.id = 'player-' + Date.now();
@@ -36,7 +35,22 @@ export class Player {
     
     // State
     this.isDead = false;
-    this.cells = [{ x: this.x, y: this.y, radius: this.radius, mass: this.mass }];
+    this.cells = [{ 
+      x: this.x, 
+      y: this.y, 
+      radius: this.radius, 
+      mass: this.mass,
+      // Cell membrane properties
+      membrane: {
+        points: 20, // Number of points around the membrane
+        elasticity: 0.3, // How elastic the membrane is (0-1)
+        distortion: 0.15, // Maximum distortion amount
+        oscillation: 0.05, // Natural oscillation amount
+        oscillationSpeed: 1.5, // Speed of oscillation
+        phase: Math.random() * Math.PI * 2, // Random starting phase
+        vertices: [] // Will store the membrane vertices
+      }
+    }];
     this.health = 100;
     
     // Special abilities
@@ -62,6 +76,38 @@ export class Player {
     
     // Team
     this.team = null;
+    
+    // Cell collision physics
+    this.cellCollisionElasticity = 0.7; // How bouncy cell collisions are (0-1)
+    this.cellRepulsionForce = 0.15; // Force applied when cells collide
+    
+    // Initialize cell membranes
+    this.initCellMembranes();
+  }
+  
+  initCellMembranes() {
+    this.cells.forEach(cell => {
+      this.initCellMembrane(cell);
+    });
+  }
+  
+  initCellMembrane(cell) {
+    const { membrane } = cell;
+    membrane.vertices = [];
+    
+    // Create initial membrane vertices in a perfect circle
+    for (let i = 0; i < membrane.points; i++) {
+      const angle = (i / membrane.points) * Math.PI * 2;
+      membrane.vertices.push({
+        angle,
+        baseX: Math.cos(angle),
+        baseY: Math.sin(angle),
+        distortionX: 0,
+        distortionY: 0,
+        velocityX: 0,
+        velocityY: 0
+      });
+    }
   }
   
   update(deltaTime) {
@@ -73,6 +119,9 @@ export class Player {
     
     // Update cells
     this.updateCells(deltaTime);
+    
+    // Update cell membranes
+    this.updateCellMembranes(deltaTime);
     
     // Update power-ups
     this.updatePowerUps(deltaTime);
@@ -95,6 +144,71 @@ export class Player {
     if (this.ejectCooldown > 0) {
       this.ejectCooldown -= deltaTime * 1000;
     }
+  }
+  
+  updateCellMembranes(deltaTime) {
+    const time = Date.now() / 1000;
+    
+    this.cells.forEach(cell => {
+      const { membrane } = cell;
+      
+      // Update membrane phase
+      membrane.phase += membrane.oscillationSpeed * deltaTime;
+      
+      // Update each vertex
+      membrane.vertices.forEach(vertex => {
+        // Apply natural oscillation
+        const oscillation = membrane.oscillation * Math.sin(vertex.angle * 3 + membrane.phase);
+        
+        // Apply elasticity to return to base shape
+        vertex.velocityX += -vertex.distortionX * membrane.elasticity;
+        vertex.velocityY += -vertex.distortionY * membrane.elasticity;
+        
+        // Apply damping
+        vertex.velocityX *= 0.9;
+        vertex.velocityY *= 0.9;
+        
+        // Update distortion
+        vertex.distortionX += vertex.velocityX * deltaTime * 5;
+        vertex.distortionY += vertex.velocityY * deltaTime * 5;
+        
+        // Limit maximum distortion
+        const distortionLength = Math.sqrt(vertex.distortionX * vertex.distortionX + vertex.distortionY * vertex.distortionY);
+        if (distortionLength > membrane.distortion) {
+          const scale = membrane.distortion / distortionLength;
+          vertex.distortionX *= scale;
+          vertex.distortionY *= scale;
+        }
+        
+        // Add oscillation to distortion
+        vertex.distortionX += vertex.baseX * oscillation;
+        vertex.distortionY += vertex.baseY * oscillation;
+      });
+    });
+  }
+  
+  distortMembrane(cell, dirX, dirY, amount) {
+    const { membrane } = cell;
+    
+    // Normalize direction
+    const length = Math.sqrt(dirX * dirX + dirY * dirY);
+    if (length > 0) {
+      dirX /= length;
+      dirY /= length;
+    }
+    
+    // Find vertices in the direction of impact
+    membrane.vertices.forEach(vertex => {
+      // Calculate dot product to determine if vertex is in impact direction
+      const dot = vertex.baseX * dirX + vertex.baseY * dirY;
+      
+      // Apply force to vertices in the impact direction
+      if (dot > 0.3) {
+        const force = dot * amount;
+        vertex.velocityX += dirX * force;
+        vertex.velocityY += dirY * force;
+      }
+    });
   }
   
   updateSpeedBasedOnSize() {
@@ -207,6 +321,9 @@ export class Player {
           
           // Play sound
           this.game.soundManager.playSound('eatFood');
+          
+          // Distort membrane in the direction of the food
+          this.distortMembrane(cell, -dx/distance, -dy/distance, 0.2);
         }
       });
       
@@ -238,6 +355,9 @@ export class Player {
             this.takeDamage(10);
             this.game.particles.createDamageParticles(cell.x, cell.y);
             this.game.soundManager.playSound('damage');
+            
+            // Distort membrane on impact
+            this.distortMembrane(cell, dx/distance, dy/distance, 0.8);
           }
         }
       });
@@ -267,6 +387,9 @@ export class Player {
           
           // Show announcement
           this.game.showAnnouncement(`${this.name} collected ${powerUp.type} power-up!`, 2000);
+          
+          // Distort membrane
+          this.distortMembrane(cell, -dx/distance, -dy/distance, 0.4);
         }
       });
       
@@ -303,6 +426,9 @@ export class Player {
               
               // Play sound
               this.game.soundManager.playSound('eatPlayer');
+              
+              // Distort membrane
+              this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
             } 
             // AI eats player
             else if (aiCell.radius > cell.radius * 1.15 && !this.powerUps.shield.active) {
@@ -320,6 +446,24 @@ export class Player {
               if (this.cells.length === 0) {
                 this.isDead = true;
                 this.game.soundManager.playSound('gameOver');
+              }
+            }
+            // Cells are similar size - bounce off each other
+            else {
+              // Calculate repulsion vector
+              const overlap = cell.radius + aiCell.radius - distance;
+              if (overlap > 0) {
+                // Normalize direction
+                const nx = dx / distance;
+                const ny = dy / distance;
+                
+                // Apply repulsion force
+                const repulsionForce = overlap * this.cellRepulsionForce;
+                cell.x += nx * repulsionForce;
+                cell.y += ny * repulsionForce;
+                
+                // Distort membrane on collision
+                this.distortMembrane(cell, nx, ny, 0.3);
               }
             }
           }
@@ -366,10 +510,78 @@ export class Player {
       }
     });
     
-    // Prevent cells from overlapping too much
-    this.preventCellOverlap();
+    // Handle cell-to-cell collisions with improved physics
+    this.handleCellCollisions(deltaTime);
     
     // Merge cells if they are close enough and enough time has passed
+    this.mergeCells();
+    
+    // Update player radius to the largest cell
+    this.radius = Math.max(...this.cells.map(cell => cell.radius));
+  }
+  
+  handleCellCollisions(deltaTime) {
+    // Check collisions between player's own cells
+    for (let i = 0; i < this.cells.length; i++) {
+      for (let j = i + 1; j < this.cells.length; j++) {
+        const cell1 = this.cells[i];
+        const cell2 = this.cells[j];
+        
+        const dx = cell1.x - cell2.x;
+        const dy = cell1.y - cell2.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDistance = cell1.radius + cell2.radius;
+        
+        // Check if cells can merge
+        const now = Date.now();
+        const canMerge = (!cell1.splitTime || now - cell1.splitTime > 15000) && 
+                         (!cell2.splitTime || now - cell2.splitTime > 15000);
+        
+        // If cells are overlapping
+        if (distance < minDistance) {
+          if (canMerge && distance < cell1.radius * 0.5) {
+            // Cells are close enough to merge
+            // This will be handled in mergeCells()
+          } else {
+            // Cells should bounce off each other
+            // Calculate overlap
+            const overlap = minDistance - distance;
+            
+            // Only apply repulsion if there's actual overlap
+            if (overlap > 0 && distance > 0) {
+              // Normalize direction
+              const nx = dx / distance;
+              const ny = dy / distance;
+              
+              // Calculate repulsion force based on mass
+              const totalMass = cell1.mass + cell2.mass;
+              const cell1Ratio = cell2.mass / totalMass;
+              const cell2Ratio = cell1.mass / totalMass;
+              
+              // Apply repulsion with elasticity
+              const repulsionForce = overlap * this.cellRepulsionForce;
+              
+              cell1.x += nx * repulsionForce * cell1Ratio;
+              cell1.y += ny * repulsionForce * cell1Ratio;
+              cell2.x -= nx * repulsionForce * cell2Ratio;
+              cell2.y -= ny * repulsionForce * cell2Ratio;
+              
+              // Distort membranes on collision
+              this.distortMembrane(cell1, nx, ny, 0.3);
+              this.distortMembrane(cell2, -nx, -ny, 0.3);
+              
+              // Keep cells within world bounds
+              cell1.x = Math.max(cell1.radius, Math.min(this.game.worldSize - cell1.radius, cell1.x));
+              cell1.y = Math.max(cell1.radius, Math.min(this.game.worldSize - cell1.radius, cell1.y));
+              cell2.x = Math.max(cell2.radius, Math.min(this.game.worldSize - cell2.radius, cell2.x));
+              cell2.y = Math.max(cell2.radius, Math.min(this.game.worldSize - cell2.radius, cell2.y));
+            }
+          }
+        }
+      }
+    }
+  }
+  mergeCells() {
     const now = Date.now();
     const mergeTime = 15000; // 15 seconds after splitting
     
@@ -388,8 +600,18 @@ export class Player {
         
         // Merge if cells are close enough
         if (distance < cell1.radius * 0.5) {
-          cell1.mass += cell2.mass;
+          // Calculate new position weighted by mass
+          const totalMass = cell1.mass + cell2.mass;
+          const newX = (cell1.x * cell1.mass + cell2.x * cell2.mass) / totalMass;
+          const newY = (cell1.y * cell1.mass + cell2.y * cell2.mass) / totalMass;
+          
+          // Update cell1 with merged properties
+          cell1.mass = totalMass;
           cell1.radius = Math.sqrt(cell1.mass / Math.PI);
+          cell1.x = newX;
+          cell1.y = newY;
+          
+          // Remove cell2
           this.cells.splice(j, 1);
           j--;
           
@@ -398,47 +620,9 @@ export class Player {
           
           // Play sound
           this.game.soundManager.playSound('merge');
-        }
-      }
-    }
-    
-    // Update player radius to the largest cell
-    this.radius = Math.max(...this.cells.map(cell => cell.radius));
-  }
-  
-  preventCellOverlap() {
-    // Prevent cells from overlapping too much
-    for (let i = 0; i < this.cells.length; i++) {
-      for (let j = i + 1; j < this.cells.length; j++) {
-        const cell1 = this.cells[i];
-        const cell2 = this.cells[j];
-        
-        const dx = cell1.x - cell2.x;
-        const dy = cell1.y - cell2.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        // If cells are overlapping too much, push them apart
-        const minDistance = cell1.radius + cell2.radius - Math.min(cell1.radius, cell2.radius) * 0.3;
-        
-        if (distance < minDistance && distance > 0) {
-          // Calculate repulsion force
-          const repulsionForce = (minDistance - distance) / distance * 0.05;
           
-          // Apply repulsion to both cells (weighted by mass)
-          const totalMass = cell1.mass + cell2.mass;
-          const cell1Weight = cell2.mass / totalMass;
-          const cell2Weight = cell1.mass / totalMass;
-          
-          cell1.x += dx * repulsionForce * cell1Weight;
-          cell1.y += dy * repulsionForce * cell1Weight;
-          cell2.x -= dx * repulsionForce * cell2Weight;
-          cell2.y -= dy * repulsionForce * cell2Weight;
-          
-          // Keep within world bounds
-          cell1.x = Math.max(cell1.radius, Math.min(this.game.worldSize - cell1.radius, cell1.x));
-          cell1.y = Math.max(cell1.radius, Math.min(this.game.worldSize - cell1.radius, cell1.y));
-          cell2.x = Math.max(cell2.radius, Math.min(this.game.worldSize - cell2.radius, cell2.x));
-          cell2.y = Math.max(cell2.radius, Math.min(this.game.worldSize - cell2.radius, cell2.y));
+          // Distort membrane during merge
+          this.distortMembrane(cell1, 0, 0, 0.6);
         }
       }
     }
@@ -626,8 +810,24 @@ export class Player {
       mass: newMass,
       velocityX: dirX * this.splitVelocity,
       velocityY: dirY * this.splitVelocity,
-      splitTime: Date.now()
+      splitTime: Date.now(),
+      membrane: {
+        points: cell.membrane.points,
+        elasticity: cell.membrane.elasticity,
+        distortion: cell.membrane.distortion,
+        oscillation: cell.membrane.oscillation,
+        oscillationSpeed: cell.membrane.oscillationSpeed,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      }
     };
+    
+    // Initialize membrane for new cell
+    this.initCellMembrane(newCell);
+    
+    // Distort both membranes in the split direction
+    this.distortMembrane(cell, -dirX, -dirY, 0.5);
+    this.distortMembrane(newCell, dirX, dirY, 0.5);
     
     this.cells.push(newCell);
     
@@ -714,6 +914,9 @@ export class Player {
             dirX, 
             dirY
           );
+          
+          // Distort membrane in ejection direction
+          this.distortMembrane(cell, dirX, dirY, 0.3);
         }
       }
     });
@@ -763,7 +966,7 @@ export class Player {
       
       // Create level up effect
       this.effects.push({
-                type: 'levelUp',
+        type: 'levelUp',
         duration: 2000,
         startTime: Date.now()
       });
@@ -773,6 +976,11 @@ export class Player {
       
       // Show announcement
       this.game.showAnnouncement(`${this.name} reached level ${this.level}!`, 3000);
+      
+      // Distort all cell membranes for level up effect
+      this.cells.forEach(cell => {
+        this.distortMembrane(cell, 0, 0, 0.8);
+      });
     }
   }
   
@@ -782,63 +990,8 @@ export class Player {
       // Apply invisibility
       const opacity = this.powerUps.invisibility.active ? this.powerUps.invisibility.opacity : 1;
       
-      // Draw cell body
-      ctx.beginPath();
-      ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
-      
-      // Apply visual effects for power-ups
-      if (this.powerUps.shield.active) {
-        // Shield effect
-        const gradient = ctx.createRadialGradient(
-          cell.x, cell.y, cell.radius * 0.8,
-          cell.x, cell.y, cell.radius
-        );
-        gradient.addColorStop(0, this.color);
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0.7)');
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = opacity;
-      } else if (this.powerUps.speedBoost.active) {
-        // Speed boost effect
-        const gradient = ctx.createRadialGradient(
-          cell.x, cell.y, 0,
-          cell.x, cell.y, cell.radius
-        );
-        gradient.addColorStop(0, this.color);
-        gradient.addColorStop(1, 'rgba(0, 255, 255, 0.5)');
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = opacity;
-      } else if (this.powerUps.massBoost.active) {
-        // Mass boost effect
-        const gradient = ctx.createRadialGradient(
-          cell.x, cell.y, 0,
-          cell.x, cell.y, cell.radius
-        );
-        gradient.addColorStop(0, this.color);
-        gradient.addColorStop(1, 'rgba(255, 215, 0, 0.5)');
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = opacity;
-      } else if (this.powerUps.magnet.active) {
-        // Magnet effect
-        const gradient = ctx.createRadialGradient(
-          cell.x, cell.y, 0,
-          cell.x, cell.y, cell.radius
-        );
-        gradient.addColorStop(0, this.color);
-        gradient.addColorStop(1, 'rgba(128, 0, 128, 0.5)');
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = opacity;
-      } else {
-        // Normal cell
-        ctx.fillStyle = this.color;
-        ctx.globalAlpha = opacity;
-      }
-      
-      ctx.fill();
-      
-      // Draw cell border
-      ctx.lineWidth = 2;
-      ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
-      ctx.stroke();
+      // Draw cell with membrane
+      this.drawCellWithMembrane(ctx, cell, opacity);
       
       // Draw player name
       if (cell.radius > 20) {
@@ -900,6 +1053,109 @@ export class Player {
       ctx.strokeStyle = 'rgba(128, 0, 128, 0.3)';
       ctx.lineWidth = 2;
       ctx.stroke();
+    }
+  }
+  
+  drawCellWithMembrane(ctx, cell, opacity) {
+    const { membrane } = cell;
+    
+    ctx.globalAlpha = opacity;
+    
+    // Start drawing the membrane
+    ctx.beginPath();
+    
+    // Draw membrane using vertices
+    if (membrane.vertices.length > 0) {
+      const firstVertex = membrane.vertices[0];
+      const startX = cell.x + (firstVertex.baseX + firstVertex.distortionX) * cell.radius;
+      const startY = cell.y + (firstVertex.baseY + firstVertex.distortionY) * cell.radius;
+      
+      ctx.moveTo(startX, startY);
+      
+      // Draw the rest of the vertices
+      for (let i = 1; i < membrane.vertices.length; i++) {
+        const vertex = membrane.vertices[i];
+        const x = cell.x + (vertex.baseX + vertex.distortionX) * cell.radius;
+        const y = cell.y + (vertex.baseY + vertex.distortionY) * cell.radius;
+        
+        ctx.lineTo(x, y);
+      }
+      
+      // Close the path
+      ctx.closePath();
+    } else {
+      // Fallback to circle if no vertices
+      ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
+    }
+    
+    // Apply visual effects for power-ups
+    if (this.powerUps.shield.active) {
+      // Shield effect
+      const gradient = ctx.createRadialGradient(
+        cell.x, cell.y, cell.radius * 0.8,
+        cell.x, cell.y, cell.radius
+      );
+      gradient.addColorStop(0, this.color);
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0.7)');
+      ctx.fillStyle = gradient;
+    } else if (this.powerUps.speedBoost.active) {
+      // Speed boost effect
+      const gradient = ctx.createRadialGradient(
+        cell.x, cell.y, 0,
+        cell.x, cell.y, cell.radius
+      );
+      gradient.addColorStop(0, this.color);
+      gradient.addColorStop(1, 'rgba(0, 255, 255, 0.5)');
+      ctx.fillStyle = gradient;
+    } else if (this.powerUps.massBoost.active) {
+      // Mass boost effect
+      const gradient = ctx.createRadialGradient(
+        cell.x, cell.y, 0,
+        cell.x, cell.y, cell.radius
+      );
+      gradient.addColorStop(0, this.color);
+      gradient.addColorStop(1, 'rgba(255, 215, 0, 0.5)');
+      ctx.fillStyle = gradient;
+    } else if (this.powerUps.magnet.active) {
+      // Magnet effect
+      const gradient = ctx.createRadialGradient(
+        cell.x, cell.y, 0,
+        cell.x, cell.y, cell.radius
+      );
+      gradient.addColorStop(0, this.color);
+      gradient.addColorStop(1, 'rgba(128, 0, 128, 0.5)');
+      ctx.fillStyle = gradient;
+    } else {
+      // Normal cell
+      ctx.fillStyle = this.color;
+    }
+    
+    ctx.fill();
+    
+    // Draw cell border
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.stroke();
+    
+    // Draw cell nucleus
+    ctx.beginPath();
+    ctx.arc(cell.x, cell.y, cell.radius * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fill();
+    
+    // Draw cytoplasm details (small circles inside the cell)
+    const numDetails = Math.floor(cell.radius / 10);
+    for (let i = 0; i < numDetails; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * cell.radius * 0.7;
+      const detailX = cell.x + Math.cos(angle) * distance;
+      const detailY = cell.y + Math.sin(angle) * distance;
+      const detailSize = cell.radius * 0.05 + Math.random() * cell.radius * 0.05;
+      
+      ctx.beginPath();
+      ctx.arc(detailX, detailY, detailSize, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+      ctx.fill();
     }
   }
   
