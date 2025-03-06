@@ -3,29 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Enhanced Agar.io Clone</title>
+  <title>Cytosis.io - Cell Survival Evolution</title>
   <link rel="stylesheet" href="./src/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
   <div id="game-container">
     <div id="start-screen">
-      <h1>Enhanced Agar.io</h1>
+      <div class="logo-container">
+        <h1>Cytosis<span class="io-text">.io</span></h1>
+        <div class="tagline">Evolve. Consume. Dominate.</div>
+      </div>
+      
       <div class="game-description">
-        <p>An improved version of the classic cell-eating game with new features!</p>
+        <p>Enter the microscopic world where only the strongest cells survive. Consume, grow, and evolve!</p>
       </div>
       
       <div class="settings-container">
         <div class="player-settings">
-          <input type="text" id="player-name" placeholder="Enter your name" maxlength="15">
+          <input type="text" id="player-name" placeholder="Enter your cell name" maxlength="15">
           
           <div class="color-picker">
-            <span>Choose color:</span>
+            <span>Choose your cell color:</span>
             <div class="color-options">
               <div class="color-option" style="background-color: #ff5252;" data-color="#ff5252"></div>
               <div class="color-option" style="background-color: #4caf50;" data-color="#4caf50"></div>
               <div class="color-option" style="background-color: #2196f3;" data-color="#2196f3"></div>
               <div class="color-option" style="background-color: #ff9800;" data-color="#ff9800"></div>
               <div class="color-option" style="background-color: #9c27b0;" data-color="#9c27b0"></div>
+              <div class="color-option" style="background-color: #00bcd4;" data-color="#00bcd4"></div>
+              <div class="color-option" style="background-color: #ffeb3b;" data-color="#ffeb3b"></div>
+              <div class="color-option" style="background-color: #e91e63;" data-color="#e91e63"></div>
             </div>
           </div>
         </div>
@@ -34,16 +44,25 @@
           <span>Game Mode:</span>
           <div class="game-modes">
             <div class="game-mode selected" data-mode="classic">
-              <h3>Classic</h3>
-              <p>The original gameplay experience</p>
+              <div class="mode-icon classic-icon"></div>
+              <div class="mode-info">
+                <h3>Classic</h3>
+                <p>The original survival experience</p>
+              </div>
             </div>
             <div class="game-mode" data-mode="battle-royale">
-              <h3>Battle Royale</h3>
-              <p>Shrinking safe zone, last cell standing</p>
+              <div class="mode-icon battle-icon"></div>
+              <div class="mode-info">
+                <h3>Battle Royale</h3>
+                <p>Shrinking zone, last cell standing</p>
+              </div>
             </div>
             <div class="game-mode" data-mode="teams">
-              <h3>Teams</h3>
-              <p>Join forces with other players</p>
+              <div class="mode-icon teams-icon"></div>
+              <div class="mode-info">
+                <h3>Teams</h3>
+                <p>Join forces with other cells</p>
+              </div>
             </div>
           </div>
         </div>
@@ -66,7 +85,7 @@
         </div>
       </div>
       
-      <button id="start-button">Play</button>
+      <button id="start-button">PLAY NOW</button>
       
       <div class="instructions">
         <h3>How to Play</h3>
@@ -89,8 +108,8 @@
           </div>
         </div>
         <div class="tips">
-          <p>• Eat smaller cells and food to grow</p>
-          <p>• Avoid larger cells or you'll be eaten</p>
+          <p>• Consume smaller cells and nutrients to grow</p>
+          <p>• Avoid larger cells or you'll be consumed</p>
           <p>• Collect power-ups for special abilities</p>
           <p>• Viruses can split larger cells</p>
           <p>• Level up to increase your base size</p>
@@ -102,7 +121,12 @@
       <div id="score-container">
         <div class="stat">Score: <span id="score">0</span></div>
         <div class="stat">Level: <span id="level">1</span></div>
-        <div class="stat">XP: <span id="xp">0</span>/<span id="next-level-xp">1000</span></div>
+        <div class="stat-bar">
+          <div class="xp-label">XP: <span id="xp">0</span>/<span id="next-level-xp">1000</span></div>
+          <div class="xp-bar-container">
+            <div class="xp-bar-fill"></div>
+          </div>
+        </div>
       </div>
       
       <div id="leaderboard">
@@ -116,15 +140,17 @@
       </div>
       
       <div id="power-up-indicators"></div>
+      
+      <div id="minimap-container"></div>
     </div>
     
     <div id="game-over">
-      <h2>Game Over</h2>
+      <h2>Cell Terminated</h2>
       <div class="stats">
         <p>Your final score: <span id="final-score">0</span></p>
         <p>Level reached: <span id="final-level">1</span></p>
         <p>Time survived: <span id="time-survived">0:00</span></p>
-        <p>Players eaten: <span id="players-eaten">0</span></p>
+        <p>Cells consumed: <span id="players-eaten">0</span></p>
       </div>
       <button id="play-again-button">Play Again</button>
     </div>
