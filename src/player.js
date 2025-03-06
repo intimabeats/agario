@@ -1,3 +1,4 @@
+
 export class Player {
   constructor(name, color, game) {
     this.id = 'player-' + Date.now();
@@ -10,13 +11,28 @@ export class Player {
     this.y = Math.random() * game.worldSize;
     this.targetX = this.x;
     this.targetY = this.y;
-    this.speed = 3;
+    this.baseSpeed = 8; // Increased base speed significantly for more dynamic gameplay
+    this.speed = this.baseSpeed;
+    
+    // Movement smoothing
+    this.smoothingFactor = 0.2; // Increased for more responsive movement
     
     // Size and growth
     this.baseRadius = 20;
     this.radius = this.baseRadius;
     this.mass = Math.PI * this.radius * this.radius;
     this.score = 0;
+    
+    // Growth and shrink rates
+    this.growthRate = 2.5; // Higher = faster growth
+    this.shrinkRate = 0.001; // Significantly reduced for slower shrinking
+    
+    // Ejection settings
+    this.ejectCooldown = 0;
+    this.ejectCooldownTime = 150; // Reduced cooldown for more responsive ejection
+    this.ejectSize = 4; // Size of ejected mass
+    this.ejectSpeed = 20; // Increased speed of ejected mass
+    this.ejectDistance = 1.5; // Distance multiplier for ejection (higher = further from cell)
     
     // State
     this.isDead = false;
@@ -26,6 +42,7 @@ export class Player {
     // Special abilities
     this.canSplit = true;
     this.splitCooldown = 10000; // 10 seconds
+    this.splitVelocity = 20; // Increased split velocity for better separation
     this.powerUps = {
       speedBoost: { active: false, duration: 0, factor: 1.5 },
       shield: { active: false, duration: 0 },
@@ -55,13 +72,16 @@ export class Player {
     this.checkCollisions();
     
     // Update cells
-    this.updateCells();
+    this.updateCells(deltaTime);
     
     // Update power-ups
     this.updatePowerUps(deltaTime);
     
     // Update score
     this.score = this.cells.reduce((total, cell) => total + cell.mass, 0);
+    
+    // Update speed based on size (smaller = faster)
+    this.updateSpeedBasedOnSize();
     
     // Check for level up
     this.checkLevelUp();
@@ -70,22 +90,45 @@ export class Player {
     if (this.powerUps.magnet.active) {
       this.applyMagnetEffect();
     }
+    
+    // Update eject cooldown
+    if (this.ejectCooldown > 0) {
+      this.ejectCooldown -= deltaTime * 1000;
+    }
+  }
+  
+  updateSpeedBasedOnSize() {
+    // Calculate average cell radius
+    const avgRadius = this.cells.reduce((sum, cell) => sum + cell.radius, 0) / this.cells.length;
+    
+    // Improved speed formula: exponential decay as size increases
+    // This creates a more dramatic difference between small and large cells
+    const speedFactor = Math.max(0.2, Math.min(1, Math.pow(this.baseRadius / avgRadius, 0.7)));
+    this.speed = this.baseSpeed * speedFactor;
+    
+    // Apply speed boost if active
+    if (this.powerUps.speedBoost.active) {
+      this.speed *= this.powerUps.speedBoost.factor;
+    }
   }
   
   moveTowardsTarget() {
     if (this.cells.length === 1) {
-      // Single cell movement
+      // Single cell movement with smoothing
       const cell = this.cells[0];
       const dx = this.targetX - cell.x;
       const dy = this.targetY - cell.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance > 0) {
-        const speedFactor = this.powerUps.speedBoost.active ? 
-          this.powerUps.speedBoost.factor : 1;
-        const moveSpeed = this.speed * (30 / cell.radius) * speedFactor;
-        const moveX = (dx / distance) * Math.min(moveSpeed, distance);
-        const moveY = (dy / distance) * Math.min(moveSpeed, distance);
+        // Calculate move speed based on cell size with improved formula
+        // Smaller cells move faster, larger cells move slower
+        const sizeSpeedFactor = Math.max(0.5, Math.min(2, 40 / cell.radius));
+        const moveSpeed = this.speed * sizeSpeedFactor;
+        
+        // Apply smoothing factor for more fluid movement
+        const moveX = (dx / distance) * Math.min(moveSpeed, distance) * this.smoothingFactor;
+        const moveY = (dy / distance) * Math.min(moveSpeed, distance) * this.smoothingFactor;
         
         cell.x += moveX;
         cell.y += moveY;
@@ -95,18 +138,20 @@ export class Player {
         this.y = cell.y;
       }
     } else {
-      // Multi-cell movement
+      // Multi-cell movement with smoothing
       this.cells.forEach(cell => {
         const dx = this.targetX - cell.x;
         const dy = this.targetY - cell.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         if (distance > 0) {
-          const speedFactor = this.powerUps.speedBoost.active ? 
-            this.powerUps.speedBoost.factor : 1;
-          const moveSpeed = this.speed * (30 / cell.radius) * speedFactor;
-          const moveX = (dx / distance) * Math.min(moveSpeed, distance);
-          const moveY = (dy / distance) * Math.min(moveSpeed, distance);
+          // Calculate move speed based on cell size with improved formula
+          const sizeSpeedFactor = Math.max(0.5, Math.min(2, 40 / cell.radius));
+          const moveSpeed = this.speed * sizeSpeedFactor;
+          
+          // Apply smoothing factor for more fluid movement
+          const moveX = (dx / distance) * Math.min(moveSpeed, distance) * this.smoothingFactor;
+          const moveY = (dy / distance) * Math.min(moveSpeed, distance) * this.smoothingFactor;
           
           cell.x += moveX;
           cell.y += moveY;
@@ -138,14 +183,19 @@ export class Player {
     this.game.foods = this.game.foods.filter(food => {
       let eaten = false;
       
+      // Skip food ejected by this player (recently ejected)
+      if (food.ejectedBy === this.id && Date.now() - food.ejectionTime < 1000) {
+        return true;
+      }
+      
       this.cells.forEach(cell => {
         const dx = cell.x - food.x;
         const dy = cell.y - food.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         if (distance < cell.radius) {
-          // Eat food
-          cell.mass += food.mass;
+          // Eat food with enhanced growth rate
+          cell.mass += food.mass * this.growthRate;
           cell.radius = Math.sqrt(cell.mass / Math.PI);
           eaten = true;
           
@@ -240,7 +290,8 @@ export class Player {
             // Player eats AI
             if (cell.radius > aiCell.radius * 1.15) {
               const massGain = aiCell.mass;
-              cell.mass += massGain;
+              // Enhanced growth when eating other cells
+              cell.mass += massGain * this.growthRate;
               cell.radius = Math.sqrt(cell.mass / Math.PI);
               aiCell.mass = 0;
               
@@ -277,7 +328,7 @@ export class Player {
     });
   }
   
-  updateCells() {
+  updateCells(deltaTime) {
     // Remove cells with zero mass
     this.cells = this.cells.filter(cell => cell.mass > 0);
     
@@ -308,13 +359,15 @@ export class Player {
         }
       }
       
-      // Apply mass decay for larger cells
+      // Apply mass decay for larger cells (slower decay rate)
       if (cell.mass > this.baseRadius * this.baseRadius * Math.PI * 2) {
-        const decayRate = 0.01; // 1% per second
-        cell.mass *= (1 - decayRate / 60);
+        cell.mass *= (1 - this.shrinkRate * deltaTime);
         cell.radius = Math.sqrt(cell.mass / Math.PI);
       }
     });
+    
+    // Prevent cells from overlapping too much
+    this.preventCellOverlap();
     
     // Merge cells if they are close enough and enough time has passed
     const now = Date.now();
@@ -351,6 +404,44 @@ export class Player {
     
     // Update player radius to the largest cell
     this.radius = Math.max(...this.cells.map(cell => cell.radius));
+  }
+  
+  preventCellOverlap() {
+    // Prevent cells from overlapping too much
+    for (let i = 0; i < this.cells.length; i++) {
+      for (let j = i + 1; j < this.cells.length; j++) {
+        const cell1 = this.cells[i];
+        const cell2 = this.cells[j];
+        
+        const dx = cell1.x - cell2.x;
+        const dy = cell1.y - cell2.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // If cells are overlapping too much, push them apart
+        const minDistance = cell1.radius + cell2.radius - Math.min(cell1.radius, cell2.radius) * 0.3;
+        
+        if (distance < minDistance && distance > 0) {
+          // Calculate repulsion force
+          const repulsionForce = (minDistance - distance) / distance * 0.05;
+          
+          // Apply repulsion to both cells (weighted by mass)
+          const totalMass = cell1.mass + cell2.mass;
+          const cell1Weight = cell2.mass / totalMass;
+          const cell2Weight = cell1.mass / totalMass;
+          
+          cell1.x += dx * repulsionForce * cell1Weight;
+          cell1.y += dy * repulsionForce * cell1Weight;
+          cell2.x -= dx * repulsionForce * cell2Weight;
+          cell2.y -= dy * repulsionForce * cell2Weight;
+          
+          // Keep within world bounds
+          cell1.x = Math.max(cell1.radius, Math.min(this.game.worldSize - cell1.radius, cell1.x));
+          cell1.y = Math.max(cell1.radius, Math.min(this.game.worldSize - cell1.radius, cell1.y));
+          cell2.x = Math.max(cell2.radius, Math.min(this.game.worldSize - cell2.radius, cell2.x));
+          cell2.y = Math.max(cell2.radius, Math.min(this.game.worldSize - cell2.radius, cell2.y));
+        }
+      }
+    }
   }
   
   updatePowerUps(deltaTime) {
@@ -525,13 +616,16 @@ export class Player {
     cell.mass = newMass;
     cell.radius = Math.sqrt(cell.mass / Math.PI);
     
+    // Position the new cell slightly away from the original to prevent immediate overlap
+    const offsetDistance = cell.radius * 0.2;
+    
     const newCell = {
-      x: cell.x,
-      y: cell.y,
+      x: cell.x + dirX * offsetDistance,
+      y: cell.y + dirY * offsetDistance,
       radius: cell.radius,
       mass: newMass,
-      velocityX: dirX * 10,
-      velocityY: dirY * 10,
+      velocityX: dirX * this.splitVelocity,
+      velocityY: dirY * this.splitVelocity,
       splitTime: Date.now()
     };
     
@@ -542,9 +636,15 @@ export class Player {
   }
   
   ejectMass() {
-    if (this.cells.length === 0) return;
+    if (this.cells.length === 0 || this.ejectCooldown > 0) return;
+    
+    // Set cooldown
+    this.ejectCooldown = this.ejectCooldownTime;
+    
+    let ejectedCount = 0;
     
     this.cells.forEach(cell => {
+      // Only eject if cell is big enough
       if (cell.mass > this.baseRadius * 2) {
         // Calculate direction
         const dx = this.targetX - cell.x;
@@ -555,46 +655,73 @@ export class Player {
         const dirX = distance > 0 ? dx / distance : 1;
         const dirY = distance > 0 ? dy / distance : 0;
         
-        // Eject mass
-        const ejectedMass = cell.mass * 0.1;
-        cell.mass -= ejectedMass;
-        cell.radius = Math.sqrt(cell.mass / Math.PI);
+        // Calculate ejected mass (smaller amount for better gameplay)
+        const ejectedMass = Math.min(cell.mass * 0.05, 20);
         
-        // Create food from ejected mass
-        this.game.foods.push({
-          x: cell.x + dirX * cell.radius,
-          y: cell.y + dirY * cell.radius,
-          radius: 5,
-          mass: ejectedMass * 0.8,
-          color: this.color,
-          velocityX: dirX * 8,
-          velocityY: dirY * 8,
-          ejectedBy: this.id,
-          ejectionTime: Date.now(),
-          update: function(deltaTime) {
-            // Update position based on velocity
-            const elapsed = Date.now() - this.ejectionTime;
-            const slowdownFactor = Math.max(0, 1 - elapsed / 1000); // Slow down over 1 second
-            
-            this.x += this.velocityX * slowdownFactor * deltaTime;
-            this.y += this.velocityY * slowdownFactor * deltaTime;
-            
-            // Keep within world bounds
-            this.x = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.x));
-            this.y = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.y));
-          },
-          draw: function(ctx) {
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-            ctx.fillStyle = this.color;
-            ctx.fill();
-          }
-        });
-        
-        // Play sound
-        this.game.soundManager.playSound('eject');
+        // Only eject if it won't make the cell too small
+        if (cell.mass - ejectedMass > this.baseRadius) {
+          // Reduce cell mass
+          cell.mass -= ejectedMass;
+          cell.radius = Math.sqrt(cell.mass / Math.PI);
+          
+          // Calculate ejection position (further from cell)
+          const ejectionX = cell.x + dirX * cell.radius * this.ejectDistance;
+          const ejectionY = cell.y + dirY * cell.radius * this.ejectDistance;
+          
+          // Create ejected mass as food
+          const ejectedFood = {
+            x: ejectionX,
+            y: ejectionY,
+            radius: this.ejectSize,
+            mass: ejectedMass * 0.8,
+            color: this.color,
+            velocityX: dirX * this.ejectSpeed,
+            velocityY: dirY * this.ejectSpeed,
+            ejectedBy: this.id,
+            ejectionTime: Date.now(),
+            game: this.game, // Pass game reference
+            update: function(deltaTime) {
+              // Update position based on velocity
+              const elapsed = Date.now() - this.ejectionTime;
+              const slowdownFactor = Math.max(0, 1 - elapsed / 1000); // Slow down over 1 second
+              
+              this.x += this.velocityX * slowdownFactor * deltaTime;
+              this.y += this.velocityY * slowdownFactor * deltaTime;
+              
+              // Keep within world bounds
+              if (this.game && this.game.worldSize) {
+                this.x = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.x));
+                this.y = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.y));
+              }
+            },
+            draw: function(ctx) {
+              ctx.beginPath();
+              ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+              ctx.fillStyle = this.color;
+              ctx.fill();
+            }
+          };
+          
+          this.game.foods.push(ejectedFood);
+          
+          ejectedCount++;
+          
+          // Create particles
+          this.game.particles.createEjectParticles(
+            ejectionX, 
+            ejectionY, 
+            this.color, 
+            dirX, 
+            dirY
+          );
+        }
       }
     });
+    
+    // Play sound if any mass was ejected
+    if (ejectedCount > 0) {
+      this.game.soundManager.playSound('eject');
+    }
   }
   
   takeDamage(amount) {
@@ -636,7 +763,7 @@ export class Player {
       
       // Create level up effect
       this.effects.push({
-        type: 'levelUp',
+                type: 'levelUp',
         duration: 2000,
         startTime: Date.now()
       });

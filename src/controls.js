@@ -1,3 +1,4 @@
+
 export function setupControls(game, player) {
   // Mouse movement
   game.canvas.addEventListener('mousemove', (e) => {
@@ -50,6 +51,48 @@ export function setupControls(game, player) {
         // W to eject mass
         player.ejectMass();
         break;
+      case 'p':
+      case 'P':
+        // P to pause
+        game.isPaused = !game.isPaused;
+        const pauseMenu = document.getElementById('pause-menu');
+        if (pauseMenu) {
+          pauseMenu.style.display = game.isPaused ? 'block' : 'none';
+        }
+        break;
+    }
+  });
+  
+  // Add continuous ejection when W is held down
+  let isWKeyDown = false;
+  let ejectInterval = null;
+  
+  document.addEventListener('keydown', (e) => {
+    if (game.isGameOver || game.isPaused) return;
+    
+    if ((e.key === 'w' || e.key === 'W') && !isWKeyDown) {
+      isWKeyDown = true;
+      player.ejectMass(); // Eject immediately on first press
+      
+      // Set up interval for continuous ejection
+      ejectInterval = setInterval(() => {
+        if (!game.isGameOver && !game.isPaused) {
+          player.ejectMass();
+        } else {
+          clearInterval(ejectInterval);
+          isWKeyDown = false;
+        }
+      }, 100); // Eject every 100ms while key is held
+    }
+  });
+  
+  document.addEventListener('keyup', (e) => {
+    if (e.key === 'w' || e.key === 'W') {
+      isWKeyDown = false;
+      if (ejectInterval) {
+        clearInterval(ejectInterval);
+        ejectInterval = null;
+      }
     }
   });
   
@@ -98,9 +141,28 @@ export function setupControls(game, player) {
     ejectButton.style.fontWeight = 'bold';
     ejectButton.style.boxShadow = '0 4px 8px rgba(0, 0, 0, 0.3)';
     
+    // Continuous ejection on touch hold
+    let ejectTouchInterval = null;
+    
     ejectButton.addEventListener('touchstart', (e) => {
       e.preventDefault();
-      player.ejectMass();
+      player.ejectMass(); // Eject immediately on first touch
+      
+      // Set up interval for continuous ejection
+      ejectTouchInterval = setInterval(() => {
+        if (!game.isGameOver && !game.isPaused) {
+          player.ejectMass();
+        } else {
+          clearInterval(ejectTouchInterval);
+        }
+      }, 100); // Eject every 100ms while touched
+    });
+    
+    ejectButton.addEventListener('touchend', () => {
+      if (ejectTouchInterval) {
+        clearInterval(ejectTouchInterval);
+        ejectTouchInterval = null;
+      }
     });
     
     // Add buttons to container
@@ -333,16 +395,15 @@ export function setupControls(game, player) {
     d: false
   };
   
-  document.addEventListener('keydown', (e) => {
+  document.addEventListener
+
+	  document.addEventListener('keydown', (e) => {
     if (game.isGameOver || game.isPaused) return;
     
     // Skip if the key is 'w' and it's used for ejecting mass
     if (e.key.toLowerCase() === 'w') return;
     
     switch (e.key.toLowerCase()) {
-      case 'w':
-        wasdKeysActive.w = true;
-        break;
       case 'a':
         wasdKeysActive.a = true;
         break;
@@ -377,8 +438,8 @@ export function setupControls(game, player) {
   });
   
   function updatePlayerTargetFromWASD() {
-    // Only update if at least one WASD key is active
-    if (wasdKeysActive.w || wasdKeysActive.a || wasdKeysActive.s || wasdKeysActive.d) {
+    // Only update if at least one WASD key is active (except W for ejection)
+    if (wasdKeysActive.a || wasdKeysActive.s || wasdKeysActive.d) {
       let dirX = 0;
       let dirY = 0;
       

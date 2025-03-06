@@ -317,6 +317,49 @@ export class ParticleSystem {
     }
   }
   
+  createEjectParticles(x, y, color, dirX, dirY) {
+    const particleCount = 8;
+    const spreadAngle = Math.PI / 6; // 30 degrees spread
+    const baseAngle = Math.atan2(dirY, dirX);
+    
+    for (let i = 0; i < particleCount; i++) {
+      const angleOffset = (Math.random() - 0.5) * spreadAngle;
+      const angle = baseAngle + angleOffset;
+      const speed = 30 + Math.random() * 40;
+      
+      this.createParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 2 + Math.random() * 3,
+        color,
+        life: 0.3 + Math.random() * 0.2,
+        maxLife: 0.5,
+        shrink: 1.5
+      });
+    }
+    
+    // Add a small trail behind the ejected mass
+    for (let i = 0; i < 5; i++) {
+      const distance = 5 + i * 3;
+      const trailX = x - dirX * distance;
+      const trailY = y - dirY * distance;
+      
+      this.createParticle({
+        x: trailX,
+        y: trailY,
+        vx: -dirX * 5,
+        vy: -dirY * 5,
+        size: 3 - i * 0.5,
+        color,
+        life: 0.2 + Math.random() * 0.2,
+        maxLife: 0.4,
+        shrink: 2
+      });
+    }
+  }
+  
   createMergeParticles(x, y, color) {
     const particleCount = 20;
     

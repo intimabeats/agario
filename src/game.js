@@ -28,12 +28,13 @@ export class Game {
     this.worldSize = 6000;
     this.gridSize = 50;
     this.camera = { x: 0, y: 0, scale: 1 };
+    this.cameraSmoothing = 0.1; // Camera smoothing factor
     
     // Game settings
-    this.foodCount = 600;
+    this.foodCount = 1000; // Increased food count for more dynamic gameplay
     this.aiCount = 20;
     this.virusCount = 25;
-    this.powerUpCount = 8;
+    this.powerUpCount = 12; // Increased power-up count
     
     // Visual effects
     this.particles = new ParticleSystem(this);
@@ -663,14 +664,19 @@ export class Game {
   centerCamera() {
     if (!this.player) return;
     
-    this.camera.x = this.player.x;
-    this.camera.y = this.player.y;
+    // Calculate target camera position (player's position)
+    const targetX = this.player.x;
+    const targetY = this.player.y;
+    
+    // Apply smoothing to camera movement
+    this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
+    this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
     
     // Adjust scale based on player size
     const targetScale = Math.max(0.4, Math.min(1, 40 / this.player.radius));
     
     // Smooth scale transition
-    this.camera.scale += (targetScale - this.camera.scale) * 0.1;
+    this.camera.scale += (targetScale - this.camera.scale) * 0.05;
   }
   
   updateViewport() {
