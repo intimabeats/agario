@@ -10,11 +10,11 @@ export class Player {
     this.y = Math.random() * game.worldSize;
     this.targetX = this.x;
     this.targetY = this.y;
-    this.baseSpeed = 8; // Increased base speed significantly for more dynamic gameplay
+    this.baseSpeed = 5;
     this.speed = this.baseSpeed;
     
     // Movement smoothing
-    this.smoothingFactor = 0.2; // Increased for more responsive movement
+    this.smoothingFactor = 0.2;
     
     // Size and growth
     this.baseRadius = 20;
@@ -23,15 +23,16 @@ export class Player {
     this.score = 0;
     
     // Growth and shrink rates
-    this.growthRate = 2.5; // Higher = faster growth
-    this.shrinkRate = 0.001; // Significantly reduced for slower shrinking
+    this.growthRate = 1.5;
+    this.shrinkRate = 0.005;
     
     // Ejection settings
     this.ejectCooldown = 0;
-    this.ejectCooldownTime = 150; // Reduced cooldown for more responsive ejection
-    this.ejectSize = 4; // Size of ejected mass
-    this.ejectSpeed = 20; // Increased speed of ejected mass
-    this.ejectDistance = 1.5; // Distance multiplier for ejection (higher = further from cell)
+    this.ejectCooldownTime = 250;
+    this.ejectSize = 4;
+    this.ejectSpeed = 25;
+    this.ejectDeceleration = 0.95;
+    this.ejectDistance = 2;
     
     // State
     this.isDead = false;
@@ -40,23 +41,24 @@ export class Player {
       y: this.y, 
       radius: this.radius, 
       mass: this.mass,
-      // Cell membrane properties
       membrane: {
-        points: 20, // Number of points around the membrane
-        elasticity: 0.3, // How elastic the membrane is (0-1)
-        distortion: 0.15, // Maximum distortion amount
-        oscillation: 0.05, // Natural oscillation amount
-        oscillationSpeed: 1.5, // Speed of oscillation
-        phase: Math.random() * Math.PI * 2, // Random starting phase
-        vertices: [] // Will store the membrane vertices
-      }
+        points: 20,
+        elasticity: 0.3,
+        distortion: 0.15,
+        oscillation: 0.05,
+        oscillationSpeed: 1.5,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      },
+      // Z-index for layering (smaller cells can pass under viruses)
+      z: 0
     }];
     this.health = 100;
     
     // Special abilities
     this.canSplit = true;
-    this.splitCooldown = 10000; // 10 seconds
-    this.splitVelocity = 20; // Increased split velocity for better separation
+    this.splitCooldown = 10000;
+    this.splitVelocity = 25;
     this.powerUps = {
       speedBoost: { active: false, duration: 0, factor: 1.5 },
       shield: { active: false, duration: 0 },
@@ -77,14 +79,25 @@ export class Player {
     // Team
     this.team = null;
     
-    // Cell collision physics
-    this.cellCollisionElasticity = 0.7; // How bouncy cell collisions are (0-1)
-    this.cellRepulsionForce = 0.15; // Force applied when cells collide
-    
     // Initialize cell membranes
     this.initCellMembranes();
+    
+    // Stats tracking
+    this.stats = {
+      foodEaten: 0,
+      playersEaten: 0,
+      virusesEaten: 0,
+      timesEjected: 0,
+      timesSplit: 0,
+      powerUpsCollected: 0,
+      maxSize: this.radius,
+      maxScore: 0,
+      distanceTraveled: 0,
+      lastX: this.x,
+      lastY: this.y
+    };
   }
-  
+
   initCellMembranes() {
     this.cells.forEach(cell => {
       this.initCellMembrane(cell);
@@ -95,7 +108,6 @@ export class Player {
     const { membrane } = cell;
     membrane.vertices = [];
     
-    // Create initial membrane vertices in a perfect circle
     for (let i = 0; i < membrane.points; i++) {
       const angle = (i / membrane.points) * Math.PI * 2;
       membrane.vertices.push({
@@ -111,8 +123,8 @@ export class Player {
   }
   
   update(deltaTime) {
-    // Update position based on target
-    this.moveTowardsTarget();
+    // Move towards target
+    this.moveTowardsTarget(deltaTime);
     
     // Check collisions
     this.checkCollisions();
@@ -129,7 +141,25 @@ export class Player {
     // Update score
     this.score = this.cells.reduce((total, cell) => total + cell.mass, 0);
     
-    // Update speed based on size (smaller = faster)
+    // Update max score and size stats
+    if (this.score > this.stats.maxScore) {
+      this.stats.maxScore = this.score;
+    }
+    
+    const largestCell = this.cells.reduce((largest, cell) => 
+      cell.radius > largest.radius ? cell : largest, this.cells[0]);
+    if (largestCell.radius > this.stats.maxSize) {
+      this.stats.maxSize = largestCell.radius;
+    }
+    
+    // Update distance traveled
+    const dx = this.x - this.stats.lastX;
+    const dy = this.y - this.stats.lastY;
+    this.stats.distanceTraveled += Math.sqrt(dx * dx + dy * dy);
+    this.stats.lastX = this.x;
+    this.stats.lastY = this.y;
+    
+    // Update speed based on size
     this.updateSpeedBasedOnSize();
     
     // Check for level up
@@ -144,35 +174,41 @@ export class Player {
     if (this.ejectCooldown > 0) {
       this.ejectCooldown -= deltaTime * 1000;
     }
+    
+    // Create trail effect if moving fast
+    if (this.powerUps.speedBoost.active && this.game.particles) {
+      this.cells.forEach(cell => {
+        this.game.particles.createTrailEffect(cell, {
+          color: this.color,
+          size: cell.radius * 0.2,
+          interval: 0.05,
+          life: 0.3,
+          fadeOut: true,
+          shrink: 2
+        });
+      });
+    }
   }
-  
+
   updateCellMembranes(deltaTime) {
     const time = Date.now() / 1000;
     
     this.cells.forEach(cell => {
       const { membrane } = cell;
-      
-      // Update membrane phase
       membrane.phase += membrane.oscillationSpeed * deltaTime;
       
-      // Update each vertex
       membrane.vertices.forEach(vertex => {
-        // Apply natural oscillation
         const oscillation = membrane.oscillation * Math.sin(vertex.angle * 3 + membrane.phase);
         
-        // Apply elasticity to return to base shape
         vertex.velocityX += -vertex.distortionX * membrane.elasticity;
         vertex.velocityY += -vertex.distortionY * membrane.elasticity;
         
-        // Apply damping
         vertex.velocityX *= 0.9;
         vertex.velocityY *= 0.9;
         
-        // Update distortion
         vertex.distortionX += vertex.velocityX * deltaTime * 5;
         vertex.distortionY += vertex.velocityY * deltaTime * 5;
         
-        // Limit maximum distortion
         const distortionLength = Math.sqrt(vertex.distortionX * vertex.distortionX + vertex.distortionY * vertex.distortionY);
         if (distortionLength > membrane.distortion) {
           const scale = membrane.distortion / distortionLength;
@@ -180,29 +216,22 @@ export class Player {
           vertex.distortionY *= scale;
         }
         
-        // Add oscillation to distortion
         vertex.distortionX += vertex.baseX * oscillation;
         vertex.distortionY += vertex.baseY * oscillation;
       });
     });
   }
-  
+
   distortMembrane(cell, dirX, dirY, amount) {
     const { membrane } = cell;
-    
-    // Normalize direction
     const length = Math.sqrt(dirX * dirX + dirY * dirY);
     if (length > 0) {
       dirX /= length;
       dirY /= length;
     }
     
-    // Find vertices in the direction of impact
     membrane.vertices.forEach(vertex => {
-      // Calculate dot product to determine if vertex is in impact direction
       const dot = vertex.baseX * dirX + vertex.baseY * dirY;
-      
-      // Apply force to vertices in the impact direction
       if (dot > 0.3) {
         const force = dot * amount;
         vertex.velocityX += dirX * force;
@@ -210,73 +239,47 @@ export class Player {
       }
     });
   }
-  
+
   updateSpeedBasedOnSize() {
-    // Calculate average cell radius
     const avgRadius = this.cells.reduce((sum, cell) => sum + cell.radius, 0) / this.cells.length;
-    
-    // Improved speed formula: exponential decay as size increases
-    // This creates a more dramatic difference between small and large cells
-    const speedFactor = Math.max(0.2, Math.min(1, Math.pow(this.baseRadius / avgRadius, 0.7)));
+    const speedFactor = Math.max(0.5, Math.min(1.5, Math.pow(this.baseRadius / avgRadius, 0.4)));
     this.speed = this.baseSpeed * speedFactor;
     
-    // Apply speed boost if active
     if (this.powerUps.speedBoost.active) {
       this.speed *= this.powerUps.speedBoost.factor;
     }
   }
-  
-  moveTowardsTarget() {
-    if (this.cells.length === 1) {
-      // Single cell movement with smoothing
-      const cell = this.cells[0];
+
+  moveTowardsTarget(deltaTime) {
+    // Calculate movement for each cell
+    this.cells.forEach(cell => {
       const dx = this.targetX - cell.x;
       const dy = this.targetY - cell.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance > 0) {
-        // Calculate move speed based on cell size with improved formula
-        // Smaller cells move faster, larger cells move slower
+        // Calculate speed based on cell size
         const sizeSpeedFactor = Math.max(0.5, Math.min(2, 40 / cell.radius));
         const moveSpeed = this.speed * sizeSpeedFactor;
         
-        // Apply smoothing factor for more fluid movement
+        // Apply smoothing for more fluid movement
         const moveX = (dx / distance) * Math.min(moveSpeed, distance) * this.smoothingFactor;
         const moveY = (dy / distance) * Math.min(moveSpeed, distance) * this.smoothingFactor;
         
+        // Update position
         cell.x += moveX;
         cell.y += moveY;
         
-        // Update player position
-        this.x = cell.x;
-        this.y = cell.y;
+        // Keep within world bounds
+        cell.x = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.x));
+        cell.y = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.y));
       }
-    } else {
-      // Multi-cell movement with smoothing
-      this.cells.forEach(cell => {
-        const dx = this.targetX - cell.x;
-        const dy = this.targetY - cell.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance > 0) {
-          // Calculate move speed based on cell size with improved formula
-          const sizeSpeedFactor = Math.max(0.5, Math.min(2, 40 / cell.radius));
-          const moveSpeed = this.speed * sizeSpeedFactor;
-          
-          // Apply smoothing factor for more fluid movement
-          const moveX = (dx / distance) * Math.min(moveSpeed, distance) * this.smoothingFactor;
-          const moveY = (dy / distance) * Math.min(moveSpeed, distance) * this.smoothingFactor;
-          
-          cell.x += moveX;
-          cell.y += moveY;
-        }
-      });
-      
-      // Update player position to the center of mass
-      this.updateCenterOfMass();
-    }
+    });
+    
+    // Update player position to the center of mass
+    this.updateCenterOfMass();
   }
-  
+
   updateCenterOfMass() {
     let totalX = 0;
     let totalY = 0;
@@ -291,16 +294,34 @@ export class Player {
     this.x = totalX / totalMass;
     this.y = totalY / totalMass;
   }
-  
+
   checkCollisions() {
+    // Get nearby entities
+    const nearbyEntities = this.game.getEntitiesInRange(
+      this.x, this.y, 
+      Math.max(200, this.radius * 3), 
+      ['foods', 'viruses', 'powerUps', 'ais']
+    );
+    
     // Check food collisions
-    this.game.foods = this.game.foods.filter(food => {
-      let eaten = false;
-      
+    this.checkFoodCollisions(nearbyEntities.foods);
+    
+    // Check virus collisions
+    this.checkVirusCollisions(nearbyEntities.viruses);
+    
+    // Check power-up collisions
+    this.checkPowerUpCollisions(nearbyEntities.powerUps);
+    
+    // Check AI collisions
+    this.checkAICollisions(nearbyEntities.ais);
+  }
+
+  checkFoodCollisions(foods) {
+    if (!foods || !foods.length) return;
+    
+    foods.forEach(food => {
       // Skip food ejected by this player (recently ejected)
-      if (food.ejectedBy === this.id && Date.now() - food.ejectionTime < 1000) {
-        return true;
-      }
+      if (food.ejectedBy === this.id && Date.now() - food.ejectionTime < 1000) return;
       
       this.cells.forEach(cell => {
         const dx = cell.x - food.x;
@@ -308,16 +329,21 @@ export class Player {
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         if (distance < cell.radius) {
-          // Eat food with enhanced growth rate
+          // Eat food with growth rate
           cell.mass += food.mass * this.growthRate;
           cell.radius = Math.sqrt(cell.mass / Math.PI);
-          eaten = true;
+          this.game.removeFood(food);
+          
+          // Update stats
+          this.stats.foodEaten++;
           
           // Add experience
           this.addExperience(5);
           
           // Create particles
-          this.game.particles.createFoodParticles(food.x, food.y, food.color);
+          if (this.game.particles) {
+            this.game.particles.createFoodParticles(food.x, food.y, food.color);
+          }
           
           // Play sound
           this.game.soundManager.playSound('eatFood');
@@ -326,14 +352,13 @@ export class Player {
           this.distortMembrane(cell, -dx/distance, -dy/distance, 0.2);
         }
       });
-      
-      return !eaten;
     });
+  }
+
+  checkVirusCollisions(viruses) {
+    if (!viruses || !viruses.length) return;
     
-    // Check virus collisions
-    this.game.viruses = this.game.viruses.filter(virus => {
-      let collision = false;
-      
+    viruses.forEach(virus => {
       this.cells.forEach((cell, index) => {
         const dx = cell.x - virus.x;
         const dy = cell.y - virus.y;
@@ -342,45 +367,77 @@ export class Player {
         if (distance < cell.radius + virus.radius) {
           if (cell.radius > virus.radius * 1.15) {
             // Split the cell if it's big enough
-            if (this.cells.length < 8) {
-              this.splitCell(index, virus.x, virus.y);
-              this.game.particles.createVirusParticles(virus.x, virus.y);
+            if (this.cells.length < 16) {
+              // Split in multiple directions
+              const splitDirections = 3 + Math.floor(Math.random() * 2); // 3-4 splits
+              for (let i = 0; i < splitDirections; i++) {
+                const angle = (i / splitDirections) * Math.PI * 2;
+                const targetX = virus.x + Math.cos(angle) * virus.radius * 2;
+                const targetY = virus.y + Math.sin(angle) * virus.radius * 2;
+                this.splitCell(index, targetX, targetY);
+              }
+              
+              // Add virus mass to the cell
+              const virusMass = virus.mass * 0.5; // Only get half the mass
+              cell.mass += virusMass;
+              cell.radius = Math.sqrt(cell.mass / Math.PI);
+              
+              // Update stats
+              this.stats.virusesEaten++;
+              
+              // Add experience
+              this.addExperience(50);
+              
+              // Create particles
+              if (this.game.particles) {
+                this.game.particles.createVirusParticles(virus.x, virus.y);
+              }
+              
+              // Play sound
               this.game.soundManager.playSound('virusSplit');
+              
+              // Remove the virus
+              this.game.removeVirus(virus);
             }
-            collision = true;
-          } else if (!this.powerUps.shield.active) {
-            // Damage the cell if it's too small
-            cell.mass *= 0.75;
-            cell.radius = Math.sqrt(cell.mass / Math.PI);
-            this.takeDamage(10);
-            this.game.particles.createDamageParticles(cell.x, cell.y);
-            this.game.soundManager.playSound('damage');
+          } else if (virus.canPassUnder(cell.radius)) {
+            // Smaller cells pass under the virus
+            cell.z = -1;
+            setTimeout(() => { cell.z = 0; }, 1000);
+          } else {
+            // Just push the cell away slightly
+            const pushFactor = 0.5;
+            const pushX = (dx / distance) * pushFactor;
+            const pushY = (dy / distance) * pushFactor;
             
-            // Distort membrane on impact
-            this.distortMembrane(cell, dx/distance, dy/distance, 0.8);
+            cell.x += pushX;
+            cell.y += pushY;
           }
         }
       });
-      
-      return !collision;
     });
+  }
+
+  checkPowerUpCollisions(powerUps) {
+    if (!powerUps || !powerUps.length) return;
     
-    // Check power-up collisions
-    this.game.powerUps = this.game.powerUps.filter(powerUp => {
-      let collected = false;
-      
+    powerUps.forEach(powerUp => {
       this.cells.forEach(cell => {
         const dx = cell.x - powerUp.x;
         const dy = cell.y - powerUp.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         if (distance < cell.radius + powerUp.radius) {
-          // Collect power-up
+          // Activate power-up
           this.activatePowerUp(powerUp.type);
-          collected = true;
+          this.game.removePowerUp(powerUp);
+          
+          // Update stats
+          this.stats.powerUpsCollected++;
           
           // Create particles
-          this.game.particles.createPowerUpParticles(powerUp.x, powerUp.y, powerUp.color);
+          if (this.game.particles) {
+            this.game.particles.createPowerUpParticles(powerUp.x, powerUp.y, powerUp.color);
+          }
           
           // Play sound
           this.game.soundManager.playSound('powerUp');
@@ -392,86 +449,91 @@ export class Player {
           this.distortMembrane(cell, -dx/distance, -dy/distance, 0.4);
         }
       });
-      
-      return !collected;
     });
+  }
+
+  checkAICollisions(aiEntities) {
+    if (!aiEntities || !aiEntities.length) return;
     
-    // Check AI collisions
-    this.game.ais.forEach(ai => {
-      if (ai.isDead) return;
+    aiEntities.forEach(entity => {
+      if (!entity.parent || entity.parent.isDead) return;
       
       // Skip collision check with team members in team mode
-      if (this.game.gameMode === 'teams' && this.team === ai.team) return;
+      if (this.game.gameMode === 'teams' && this.team === entity.parent.team) return;
+      
+      const aiCell = entity.cell;
       
       this.cells.forEach((cell, cellIndex) => {
-        ai.cells.forEach(aiCell => {
-          const dx = cell.x - aiCell.x;
-          const dy = cell.y - aiCell.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+        const dx = cell.x - aiCell.x;
+        const dy = cell.y - aiCell.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < cell.radius + aiCell.radius) {
+          // Calculate overlap percentage
+          const overlap = (cell.radius + aiCell.radius - distance) / 2;
+          const overlapPercentage = overlap / Math.min(cell.radius, aiCell.radius);
           
-          if (distance < cell.radius + aiCell.radius) {
-            // Player eats AI
-            if (cell.radius > aiCell.radius * 1.15) {
-              const massGain = aiCell.mass;
-              // Enhanced growth when eating other cells
-              cell.mass += massGain * this.growthRate;
-              cell.radius = Math.sqrt(cell.mass / Math.PI);
-              aiCell.mass = 0;
-              
-              // Add experience based on AI size
-              this.addExperience(Math.floor(massGain / 10));
-              
-              // Create particles
-              this.game.particles.createEatParticles(aiCell.x, aiCell.y, ai.color);
-              
-              // Play sound
-              this.game.soundManager.playSound('eatPlayer');
-              
-              // Distort membrane
-              this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
-            } 
-            // AI eats player
-            else if (aiCell.radius > cell.radius * 1.15 && !this.powerUps.shield.active) {
-              aiCell.mass += cell.mass;
-              aiCell.radius = Math.sqrt(aiCell.mass / Math.PI);
-              this.cells.splice(cellIndex, 1);
-              
-              // Create particles
-              this.game.particles.createEatParticles(cell.x, cell.y, this.color);
-              
-              // Play sound
-              this.game.soundManager.playSound('playerEaten');
-              
-              // Check if player is dead
-              if (this.cells.length === 0) {
-                this.isDead = true;
-                this.game.soundManager.playSound('gameOver');
-              }
+          // Player eats AI
+          if (cell.radius > aiCell.radius * 1.1 && overlapPercentage > 0.9) {
+            const massGain = aiCell.mass;
+            cell.mass += massGain * this.growthRate;
+            cell.radius = Math.sqrt(cell.mass / Math.PI);
+            aiCell.mass = 0;
+            
+            // Update stats
+            this.stats.playersEaten++;
+            
+            // Add experience based on AI size
+            this.addExperience(Math.floor(massGain / 2));
+            
+            // Create particles
+            if (this.game.particles) {
+              this.game.particles.createEatParticles(aiCell.x, aiCell.y, entity.parent.color);
             }
-            // Cells are similar size - bounce off each other
-            else {
-              // Calculate repulsion vector
-              const overlap = cell.radius + aiCell.radius - distance;
-              if (overlap > 0) {
-                // Normalize direction
-                const nx = dx / distance;
-                const ny = dy / distance;
-                
-                // Apply repulsion force
-                const repulsionForce = overlap * this.cellRepulsionForce;
-                cell.x += nx * repulsionForce;
-                cell.y += ny * repulsionForce;
-                
-                // Distort membrane on collision
-                this.distortMembrane(cell, nx, ny, 0.3);
-              }
+            
+            // Play sound
+            this.game.soundManager.playSound('eatPlayer');
+            
+            // Distort membrane
+            this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
+          } 
+          // AI eats player
+          else if (aiCell.radius > cell.radius * 1.1 && overlapPercentage > 0.9 && !this.powerUps.shield.active) {
+            aiCell.mass += cell.mass;
+            aiCell.radius = Math.sqrt(aiCell.mass / Math.PI);
+            this.cells.splice(cellIndex, 1);
+            
+            // Create particles
+            if (this.game.particles) {
+              this.game.particles.createEatParticles(cell.x, cell.y, this.color);
+            }
+            
+            // Play sound
+            this.game.soundManager.playSound('playerEaten');
+            
+            // Check if player is dead
+            if (this.cells.length === 0) {
+              this.isDead = true;
+              this.game.soundManager.playSound('gameOver');
             }
           }
-        });
+          // Cells are similar size - overlap with minimal push
+          else {
+            // Calculate minimal push to prevent complete overlap
+            const minPushNeeded = Math.max(0, cell.radius + aiCell.radius - distance - 5);
+            if (minPushNeeded > 0) {
+              const pushFactor = 0.05; // Very small push factor
+              const pushX = (dx / distance) * minPushNeeded * pushFactor;
+              const pushY = (dy / distance) * minPushNeeded * pushFactor;
+              
+              cell.x += pushX;
+              cell.y += pushY;
+            }
+          }
+        }
       });
     });
   }
-  
   updateCells(deltaTime) {
     // Remove cells with zero mass
     this.cells = this.cells.filter(cell => cell.mass > 0);
@@ -503,7 +565,7 @@ export class Player {
         }
       }
       
-      // Apply mass decay for larger cells (slower decay rate)
+      // Apply mass decay for larger cells
       if (cell.mass > this.baseRadius * this.baseRadius * Math.PI * 2) {
         cell.mass *= (1 - this.shrinkRate * deltaTime);
         cell.radius = Math.sqrt(cell.mass / Math.PI);
@@ -559,7 +621,7 @@ export class Player {
               const cell2Ratio = cell1.mass / totalMass;
               
               // Apply repulsion with elasticity
-              const repulsionForce = overlap * this.cellRepulsionForce;
+              const repulsionForce = overlap * 0.05;
               
               cell1.x += nx * repulsionForce * cell1Ratio;
               cell1.y += ny * repulsionForce * cell1Ratio;
@@ -581,6 +643,7 @@ export class Player {
       }
     }
   }
+  
   mergeCells() {
     const now = Date.now();
     const mergeTime = 15000; // 15 seconds after splitting
@@ -616,7 +679,9 @@ export class Player {
           j--;
           
           // Create merge particles
-          this.game.particles.createMergeParticles(cell2.x, cell2.y, this.color);
+          if (this.game.particles) {
+            this.game.particles.createMergeParticles(cell2.x, cell2.y, this.color);
+          }
           
           // Play sound
           this.game.soundManager.playSound('merge');
@@ -631,51 +696,26 @@ export class Player {
   updatePowerUps(deltaTime) {
     const now = Date.now();
     
-    // Update speed boost
-    if (this.powerUps.speedBoost.active && now > this.powerUps.speedBoost.duration) {
-      this.powerUps.speedBoost.active = false;
-      this.game.showAnnouncement('Speed boost expired!', 1500);
-    }
+    Object.entries(this.powerUps).forEach(([type, powerUp]) => {
+      if (powerUp.active && now > powerUp.duration) {
+        powerUp.active = false;
+        this.game.showAnnouncement(`${type} expired!`, 1500);
+        
+        if (type === 'massBoost') {
+          this.cells.forEach(cell => {
+            cell.mass /= powerUp.factor;
+            cell.radius = Math.sqrt(cell.mass / Math.PI);
+          });
+        }
+      }
+    });
     
-    // Update shield
-    if (this.powerUps.shield.active && now > this.powerUps.shield.duration) {
-      this.powerUps.shield.active = false;
-      this.game.showAnnouncement('Shield expired!', 1500);
-    }
-    
-    // Update mass boost
-    if (this.powerUps.massBoost.active && now > this.powerUps.massBoost.duration) {
-      this.powerUps.massBoost.active = false;
-      
-      // Revert mass boost
-      this.cells.forEach(cell => {
-        cell.mass /= this.powerUps.massBoost.factor;
-        cell.radius = Math.sqrt(cell.mass / Math.PI);
-      });
-      
-      this.game.showAnnouncement('Mass boost expired!', 1500);
-    }
-    
-    // Update invisibility
-    if (this.powerUps.invisibility.active && now > this.powerUps.invisibility.duration) {
-      this.powerUps.invisibility.active = false;
-      this.game.showAnnouncement('Invisibility expired!', 1500);
-    }
-    
-    // Update magnet
-    if (this.powerUps.magnet.active && now > this.powerUps.magnet.duration) {
-      this.powerUps.magnet.active = false;
-      this.game.showAnnouncement('Magnet expired!', 1500);
-    }
-    
-    // Update split cooldown
     if (!this.canSplit && now > this.splitCooldown) {
       this.canSplit = true;
     }
     
-    // Regenerate health
     if (this.health < 100) {
-      this.health += 2 * deltaTime; // 2 health per second
+      this.health += 2 * deltaTime;
       if (this.health > 100) this.health = 100;
     }
   }
@@ -688,12 +728,35 @@ export class Player {
       case 'speed':
         this.powerUps.speedBoost.active = true;
         this.powerUps.speedBoost.duration = now + duration;
-        this.game.showAnnouncement('Speed Boost activated!', 2000);
+        
+        // Create speed effect
+        if (this.game.particles) {
+          this.cells.forEach(cell => {
+            this.game.particles.createShockwave(cell.x, cell.y, {
+              color: 'rgba(0, 255, 255, 0.5)',
+              size: cell.radius * 2,
+              expandSpeed: 100,
+              life: 0.5
+            });
+          });
+        }
         break;
       case 'shield':
         this.powerUps.shield.active = true;
         this.powerUps.shield.duration = now + duration;
-        this.game.showAnnouncement('Shield activated!', 2000);
+        
+        // Create shield effect
+        if (this.game.particles) {
+          this.cells.forEach(cell => {
+            this.game.particles.createPulseEffect(cell.x, cell.y, {
+              color: 'rgba(103, 58, 183, 0.5)',
+              size: cell.radius * 1.5,
+              pulseCount: 3,
+              interval: 0.2,
+              life: 0.6
+            });
+          });
+        }
         break;
       case 'mass':
         this.powerUps.massBoost.active = true;
@@ -703,69 +766,110 @@ export class Player {
         this.cells.forEach(cell => {
           cell.mass *= this.powerUps.massBoost.factor;
           cell.radius = Math.sqrt(cell.mass / Math.PI);
+          
+          // Create mass boost effect
+          if (this.game.particles) {
+            this.game.particles.createExplosion(cell.x, cell.y, '#ffc107', cell.radius);
+          }
         });
-        
-        this.game.showAnnouncement('Mass Boost activated!', 2000);
         break;
       case 'invisibility':
         this.powerUps.invisibility.active = true;
         this.powerUps.invisibility.duration = now + duration;
-        this.game.showAnnouncement('Invisibility activated!', 2000);
+        
+        // Create invisibility effect
+        if (this.game.particles) {
+          this.cells.forEach(cell => {
+            this.game.particles.createRipple(cell.x, cell.y, 'rgba(158, 158, 158, 0.5)', cell.radius * 2);
+          });
+        }
         break;
       case 'magnet':
         this.powerUps.magnet.active = true;
         this.powerUps.magnet.duration = now + duration;
-        this.game.showAnnouncement('Food Magnet activated!', 2000);
+        
+        // Create magnet effect
+        if (this.game.particles) {
+          this.cells.forEach(cell => {
+            this.game.particles.createVortex(cell.x, cell.y, {
+              color: 'rgba(156, 39, 176, 0.5)',
+              particleCount: 30,
+              radius: this.powerUps.magnet.range / 2,
+              rotationSpeed: 3,
+              life: 1,
+              inward: true
+            });
+          });
+        }
         break;
     }
+    
+    this.game.showAnnouncement(`${type} activated!`, 2000);
   }
   
   applyMagnetEffect() {
-    // Attract nearby food
-    this.game.foods.forEach(food => {
-      // Skip food ejected by this player
-      if (food.ejectedBy === this.id) return;
-      
-      // Find closest cell
-      let closestCell = null;
-      let minDistance = Infinity;
-      
-      this.cells.forEach(cell => {
-        const dx = cell.x - food.x;
-        const dy = cell.y - food.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
+    const nearbyFoods = this.game.getEntitiesInRange(
+      this.x, this.y, 
+      this.powerUps.magnet.range, 
+      ['foods']
+    );
+    
+    if (nearbyFoods.foods && nearbyFoods.foods.length > 0) {
+      nearbyFoods.foods.forEach(food => {
+        // Skip food ejected by this player
+        if (food.ejectedBy === this.id) return;
         
-        if (distance < minDistance) {
-          minDistance = distance;
-          closestCell = cell;
+        // Find closest cell
+        const closestCell = this.cells.reduce((closest, cell) => {
+          const dx = cell.x - food.x;
+          const dy = cell.y - food.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          return distance < closest.distance ? { cell, distance } : closest;
+        }, { cell: null, distance: Infinity }).cell;
+        
+        if (closestCell) {
+          const dx = closestCell.x - food.x;
+          const dy = closestCell.y - food.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          // Apply attraction force
+          const attractionStrength = 0.1 * (1 - distance / this.powerUps.magnet.range);
+          food.x += (dx / distance) * attractionStrength * distance;
+          food.y += (dy / distance) * attractionStrength * distance;
+          
+          // Create particle trail for attracted food
+          if (this.game.particles && Math.random() < 0.1) {
+            this.game.particles.createParticle({
+              x: food.x,
+              y: food.y,
+              size: 2,
+              color: 'rgba(156, 39, 176, 0.5)',
+              life: 0.3,
+              maxLife: 0.3,
+              fadeOut: true,
+              shape: 'circle'
+            });
+          }
         }
       });
-      
-      // Apply attraction if within range
-      if (closestCell && minDistance < this.powerUps.magnet.range) {
-        const dx = closestCell.x - food.x;
-        const dy = closestCell.y - food.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        const attractionStrength = 0.1 * (1 - distance / this.powerUps.magnet.range);
-        food.x += (dx / distance) * attractionStrength * minDistance;
-        food.y += (dy / distance) * attractionStrength * minDistance;
-      }
-    });
+    }
   }
   
   split() {
-    if (!this.canSplit || this.cells.length >= 8) return;
+    if (!this.canSplit || this.cells.length >= 16) return;
     
     const now = Date.now();
     this.canSplit = false;
     this.splitCooldown = now + 10000; // 10 seconds cooldown
     
+    // Update stats
+    this.stats.timesSplit++;
+    
     // Create a copy of cells to avoid modification during iteration
     const cellsToSplit = [...this.cells];
     
     cellsToSplit.forEach((cell, index) => {
-      if (cell.radius >= this.baseRadius * 1.5) {
+      if (cell.radius >= this.baseRadius * 1.5 && this.cells.length < 16) {
         this.splitCell(index);
       }
     });
@@ -819,7 +923,8 @@ export class Player {
         oscillationSpeed: cell.membrane.oscillationSpeed,
         phase: Math.random() * Math.PI * 2,
         vertices: []
-      }
+      },
+      z: 0
     };
     
     // Initialize membrane for new cell
@@ -832,7 +937,9 @@ export class Player {
     this.cells.push(newCell);
     
     // Create split particles
-    this.game.particles.createSplitParticles(cell.x, cell.y, this.color, dirX, dirY);
+    if (this.game.particles) {
+      this.game.particles.createSplitParticles(cell.x, cell.y, this.color, dirX, dirY);
+    }
   }
   
   ejectMass() {
@@ -840,6 +947,9 @@ export class Player {
     
     // Set cooldown
     this.ejectCooldown = this.ejectCooldownTime;
+    
+    // Update stats
+    this.stats.timesEjected++;
     
     let ejectedCount = 0;
     
@@ -868,6 +978,15 @@ export class Player {
           const ejectionX = cell.x + dirX * cell.radius * this.ejectDistance;
           const ejectionY = cell.y + dirY * cell.radius * this.ejectDistance;
           
+          // Add random variation to ejection
+          const angleVariation = (Math.random() - 0.5) * 0.2; // ±0.1 radians (about ±5.7 degrees)
+          const speedVariation = 0.8 + Math.random() * 0.4; // 0.8 to 1.2 times base speed
+          
+          const angle = Math.atan2(dirY, dirX) + angleVariation;
+          const finalDirX = Math.cos(angle);
+          const finalDirY = Math.sin(angle);
+          const finalSpeed = this.ejectSpeed * speedVariation;
+          
           // Create ejected mass as food
           const ejectedFood = {
             x: ejectionX,
@@ -875,21 +994,24 @@ export class Player {
             radius: this.ejectSize,
             mass: ejectedMass * 0.8,
             color: this.color,
-            velocityX: dirX * this.ejectSpeed,
-            velocityY: dirY * this.ejectSpeed,
+            velocityX: finalDirX * finalSpeed,
+            velocityY: finalDirY * finalSpeed,
             ejectedBy: this.id,
             ejectionTime: Date.now(),
-            game: this.game, // Pass game reference
+            game: this.game,
             update: function(deltaTime) {
-              // Update position based on velocity
+              // Update position based on velocity with improved deceleration
               const elapsed = Date.now() - this.ejectionTime;
-              const slowdownFactor = Math.max(0, 1 - elapsed / 1000); // Slow down over 1 second
+              const slowdownFactor = Math.pow(this.game.player.ejectDeceleration, elapsed / 16.67);
               
-              this.x += this.velocityX * slowdownFactor * deltaTime;
-              this.y += this.velocityY * slowdownFactor * deltaTime;
+              this.velocityX *= slowdownFactor;
+              this.velocityY *= slowdownFactor;
+              
+              this.x += this.velocityX * deltaTime;
+              this.y += this.velocityY * deltaTime;
               
               // Keep within world bounds
-              if (this.game && this.game.worldSize) {
+              if (this.game) {
                 this.x = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.x));
                 this.y = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.y));
               }
@@ -907,13 +1029,15 @@ export class Player {
           ejectedCount++;
           
           // Create particles
-          this.game.particles.createEjectParticles(
-            ejectionX, 
-            ejectionY, 
-            this.color, 
-            dirX, 
-            dirY
-          );
+          if (this.game.particles) {
+            this.game.particles.createEjectParticles(
+              ejectionX, 
+              ejectionY, 
+              this.color, 
+              finalDirX, 
+              finalDirY
+            );
+          }
           
           // Distort membrane in ejection direction
           this.distortMembrane(cell, dirX, dirY, 0.3);
@@ -940,6 +1064,14 @@ export class Player {
       startTime: Date.now()
     });
     
+    // Create damage particles
+    if (this.game.particles) {
+      this.game.particles.createDamageParticles(this.x, this.y);
+    }
+    
+    // Play damage sound
+    this.game.soundManager.playSound('damage');
+    
     // Check if dead
     if (this.health <= 0) {
       this.health = 0;
@@ -950,8 +1082,6 @@ export class Player {
   
   addExperience(amount) {
     this.experience += amount;
-    
-    // Check for level up
     this.checkLevelUp();
   }
   
@@ -971,6 +1101,20 @@ export class Player {
         startTime: Date.now()
       });
       
+      // Create level up particles
+      if (this.game.particles) {
+        this.cells.forEach(cell => {
+          this.game.particles.createTextParticles(cell.x, cell.y, 'LEVEL UP!', {
+            color: '#ffeb3b',
+            size: 20,
+            particleSize: 3,
+            particleDensity: 0.3,
+            life: 1.5,
+            explosionForce: 60
+          });
+        });
+      }
+      
       // Play sound
       this.game.soundManager.playSound('levelUp');
       
@@ -983,10 +1127,12 @@ export class Player {
       });
     }
   }
-  
   draw(ctx) {
+    // Sort cells by z-index to handle layering
+    const sortedCells = [...this.cells].sort((a, b) => a.z - b.z);
+    
     // Draw cells
-    this.cells.forEach(cell => {
+    sortedCells.forEach(cell => {
       // Apply invisibility
       const opacity = this.powerUps.invisibility.active ? this.powerUps.invisibility.opacity : 1;
       
@@ -1053,6 +1199,74 @@ export class Player {
       ctx.strokeStyle = 'rgba(128, 0, 128, 0.3)';
       ctx.lineWidth = 2;
       ctx.stroke();
+      
+      // Add pulsing effect
+      const pulseSize = this.powerUps.magnet.range * (1 + Math.sin(Date.now() / 200) * 0.05);
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, pulseSize, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(128, 0, 128, 0.1)';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    
+    // Draw shield if active
+    if (this.powerUps.shield.active) {
+      this.cells.forEach(cell => {
+        const pulseSize = cell.radius * (1.1 + Math.sin(Date.now() / 150) * 0.05);
+        
+        ctx.beginPath();
+        ctx.arc(cell.x, cell.y, pulseSize, 0, Math.PI * 2);
+        
+        // Create gradient for shield
+        const gradient = ctx.createRadialGradient(
+          cell.x, cell.y, cell.radius,
+          cell.x, cell.y, pulseSize
+        );
+        gradient.addColorStop(0, 'rgba(103, 58, 183, 0)');
+        gradient.addColorStop(0.8, 'rgba(103, 58, 183, 0.2)');
+        gradient.addColorStop(1, 'rgba(103, 58, 183, 0.5)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fill();
+        
+        // Add shield border
+        ctx.strokeStyle = 'rgba(103, 58, 183, 0.7)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      });
+    }
+    
+    // Draw speed boost effect if active
+    if (this.powerUps.speedBoost.active) {
+      this.cells.forEach(cell => {
+        // Draw speed lines behind the cell
+        const angle = Math.atan2(this.targetY - cell.y, this.targetX - cell.x);
+        
+        ctx.save();
+        ctx.translate(cell.x, cell.y);
+        ctx.rotate(angle + Math.PI); // Rotate to face away from movement direction
+        
+        // Draw multiple speed lines
+        ctx.strokeStyle = 'rgba(0, 188, 212, 0.5)';
+        ctx.lineWidth = 2;
+        
+        for (let i = 0; i < 5; i++) {
+          const lineAngle = (i / 5) * Math.PI - Math.PI / 2;
+          const lineLength = cell.radius * (0.8 + Math.random() * 0.4);
+          const offsetX = Math.cos(lineAngle) * cell.radius * 0.2;
+          const offsetY = Math.sin(lineAngle) * cell.radius * 0.2;
+          
+          ctx.beginPath();
+          ctx.moveTo(offsetX, offsetY);
+          ctx.lineTo(
+            offsetX - lineLength * (0.7 + Math.sin(Date.now() / 100 + i) * 0.3),
+            offsetY
+          );
+          ctx.stroke();
+        }
+        
+        ctx.restore();
+      });
     }
   }
   
@@ -1060,8 +1274,6 @@ export class Player {
     const { membrane } = cell;
     
     ctx.globalAlpha = opacity;
-    
-    // Start drawing the membrane
     ctx.beginPath();
     
     // Draw membrane using vertices
@@ -1156,6 +1368,17 @@ export class Player {
       ctx.arc(detailX, detailY, detailSize, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
       ctx.fill();
+    }
+    
+    // Draw "passing under" effect if cell is below others
+    if (cell.z < 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      ctx.beginPath();
+      ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
   }
   
@@ -1292,7 +1515,91 @@ export class Player {
       ctx.font = '10px Arial';
       ctx.fillText(remaining.toFixed(1) + 's', x + iconSize / 2, startY + iconSize + 10);
       
+      // Draw progress ring
+      const progress = remaining / 10; // Assuming 10 seconds duration
+      ctx.beginPath();
+      ctx.arc(
+        x + iconSize / 2, 
+        startY + iconSize / 2, 
+        iconSize / 2 + 2, 
+        -Math.PI / 2, 
+        -Math.PI / 2 + Math.PI * 2 * progress
+      );
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      
       offsetX += iconSize + padding;
     });
+  }
+  
+  // Helper method to calculate if this player can eat another entity
+  canEat(entity) {
+    if (!entity) return false;
+    
+    // Get largest cell of this player
+    const myLargestCell = this.cells.reduce((largest, cell) => 
+      cell.radius > largest.radius ? cell : largest, this.cells[0]);
+    
+    // Get largest cell of target entity
+    const targetLargestCell = entity.cells ? 
+      entity.cells.reduce((largest, cell) => cell.radius > largest.radius ? cell : largest, entity.cells[0]) : 
+      entity; // If entity doesn't have cells array, use it directly (like food)
+    
+    // Check if my largest cell is big enough to eat target's largest cell
+    return myLargestCell.radius > targetLargestCell.radius * 1.1;
+  }
+  
+  // Helper method to calculate if this player should flee from another entity
+  shouldFleeFrom(entity) {
+    if (!entity) return false;
+    
+    // Get largest cell of this player
+    const myLargestCell = this.cells.reduce((largest, cell) => 
+      cell.radius > largest.radius ? cell : largest, this.cells[0]);
+    
+    // Get largest cell of target entity
+    const targetLargestCell = entity.cells ? 
+      entity.cells.reduce((largest, cell) => cell.radius > largest.radius ? cell : largest, entity.cells[0]) : 
+      entity; // If entity doesn't have cells array, use it directly (like virus)
+    
+    // Check if target's largest cell is big enough to eat my largest cell
+    return targetLargestCell.radius > myLargestCell.radius * 1.1;
+  }
+  
+  // Helper method to calculate overlap percentage between two cells
+  calculateOverlap(cell1, cell2) {
+    const dx = cell1.x - cell2.x;
+    const dy = cell1.y - cell2.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // If cells don't overlap at all
+    if (distance >= cell1.radius + cell2.radius) {
+      return 0;
+    }
+    
+    // Calculate overlap
+    const overlap = (cell1.radius + cell2.radius - distance) / 2;
+    
+    // Calculate overlap percentage relative to the smaller cell
+    return overlap / Math.min(cell1.radius, cell2.radius);
+  }
+  
+  // Get player stats for display
+  getStats() {
+    return {
+      name: this.name,
+      level: this.level,
+      score: Math.floor(this.score),
+      maxScore: Math.floor(this.stats.maxScore),
+      foodEaten: this.stats.foodEaten,
+      playersEaten: this.stats.playersEaten,
+      virusesEaten: this.stats.virusesEaten,
+      maxSize: Math.floor(this.stats.maxSize),
+      distanceTraveled: Math.floor(this.stats.distanceTraveled),
+      timesSplit: this.stats.timesSplit,
+      timesEjected: this.stats.timesEjected,
+      powerUpsCollected: this.stats.powerUpsCollected
+    };
   }
 }

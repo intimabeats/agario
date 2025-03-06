@@ -28,6 +28,9 @@ export class Virus {
     this.dangerRadius = this.radius + this.spikeLength + 5; // Radius for danger detection
     this.lastInteractionTime = 0;
     this.interactionCooldown = 500; // ms between interactions
+    
+    // Z-index for layering (smaller cells can pass under)
+    this.z = 0;
   }
   
   initSpikeTips() {
@@ -81,15 +84,20 @@ export class Virus {
     const now = Date.now();
     if (now - this.lastInteractionTime < this.interactionCooldown) return;
     
+    // Get nearby entities
+    const nearbyEntities = this.game.getEntitiesInRange(this.x, this.y, this.dangerRadius + 50, ['ais', 'player']);
+    
     // Check player cells
-    if (this.game.player && !this.game.player.isDead) {
-      this.game.player.cells.forEach(cell => {
-        const dx = cell.x - this.x;
-        const dy = cell.y - this.y;
+    if (nearbyEntities.player && nearbyEntities.player.length > 0) {
+      nearbyEntities.player.forEach(entity => {
+        if (!entity.parent || entity.parent.isDead) return;
+        
+        const dx = entity.x - this.x;
+        const dy = entity.y - this.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         // If cell is approaching but not yet colliding
-        if (distance < this.dangerRadius + cell.radius && distance > this.radius + cell.radius) {
+        if (distance < this.dangerRadius + entity.radius && distance > this.radius + entity.radius) {
           // React by extending spikes in that direction
           this.reactToEntity(dx, dy, distance, 0.5);
           this.lastInteractionTime = now;
@@ -98,22 +106,22 @@ export class Virus {
     }
     
     // Check AI cells
-    this.game.ais.forEach(ai => {
-      if (ai.isDead) return;
-      
-      ai.cells.forEach(cell => {
-        const dx = cell.x - this.x;
-        const dy = cell.y - this.y;
+    if (nearbyEntities.ais && nearbyEntities.ais.length > 0) {
+      nearbyEntities.ais.forEach(entity => {
+        if (!entity.parent || entity.parent.isDead) return;
+        
+        const dx = entity.x - this.x;
+        const dy = entity.y - this.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         // If cell is approaching but not yet colliding
-        if (distance < this.dangerRadius + cell.radius && distance > this.radius + cell.radius) {
+        if (distance < this.dangerRadius + entity.radius && distance > this.radius + entity.radius) {
           // React by extending spikes in that direction
           this.reactToEntity(dx, dy, distance, 0.3);
           this.lastInteractionTime = now;
         }
       });
-    });
+    }
   }
   
   reactToEntity(dx, dy, distance, intensity) {
@@ -136,6 +144,92 @@ export class Virus {
         spike.velocityY += dirY * intensity * 2;
       }
     });
+  }
+  
+  // Check if a cell can pass under this virus
+  canPassUnder(cellRadius) {
+    // Smaller cells can pass under
+    return cellRadius < this.radius * 0.9;
+  }
+  
+  // Check if a cell can consume this virus
+  canBeConsumedBy(cellRadius) {
+    // Larger cells can consume but will be split
+    return cellRadius > this.radius * 1.15;
+  }
+  
+  // Handle collision with a cell
+  handleCollision(cell, player) {
+    const dx = cell.x - this.x;
+    const dy = cell.y - this.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // If cell is touching the virus
+    if (distance < cell.radius + this.radius) {
+      // If cell is large enough to consume the virus
+      if (this.canBeConsumedBy(cell.radius)) {
+        // Add virus mass to the cell
+        const virusMass = this.mass * 0.5; // Only get half the mass
+        cell.mass += virusMass;
+        cell.radius = Math.sqrt(cell.mass / Math.PI);
+        
+        // Add experience to player
+        if (player) {
+          player.addExperience(50);
+        }
+        
+        // Create particles
+        this.game.particles.createVirusParticles(this.x, this.y);
+        
+        // Play sound
+        this.game.soundManager.playSound('virusSplit');
+        
+        // Split the cell in multiple directions
+        if (player && player.cells.length < 16) {
+          // Find the index of the cell in player's cells array
+          const cellIndex = player.cells.findIndex(c => c === cell);
+          if (cellIndex !== -1) {
+            // Split in multiple directions
+            const splitDirections = 3 + Math.floor(Math.random() * 2); // 3-4 splits
+            for (let i = 0; i < splitDirections; i++) {
+              const angle = (i / splitDirections) * Math.PI * 2;
+              const targetX = this.x + Math.cos(angle) * this.radius * 2;
+              const targetY = this.y + Math.sin(angle) * this.radius * 2;
+              player.splitCell(cellIndex, targetX, targetY);
+            }
+          }
+        }
+        
+        // Remove the virus
+        return true;
+      } 
+      // If cell is small enough to pass under
+      else if (this.canPassUnder(cell.radius)) {
+        // Set z-index to pass under
+        cell.z = -1;
+        
+        // Reset z-index after a delay
+        setTimeout(() => {
+          if (cell) cell.z = 0;
+        }, 1000);
+        
+        return false;
+      } 
+      // Cell is neither big enough to consume nor small enough to pass under
+      else {
+        // Just push the cell away slightly
+        const pushFactor = 0.5;
+        const pushX = (dx / distance) * pushFactor;
+        const pushY = (dy / distance) * pushFactor;
+        
+        cell.x += pushX;
+        cell.y += pushY;
+        
+        return false;
+      }
+    }
+    
+    return false;
   }
   
   draw(ctx) {
@@ -232,5 +326,28 @@ export class Virus {
     
     // Restore context
     ctx.restore();
+    
+    // Draw "pass under" indicator for small cells
+    if (this.game.player && !this.game.player.isDead) {
+      const smallestCell = this.game.player.cells.reduce(
+        (smallest, cell) => cell.radius < smallest.radius ? cell : smallest,
+        this.game.player.cells[0]
+      );
+      
+      if (this.canPassUnder(smallestCell.radius)) {
+        const dx = this.x - this.game.player.x;
+        const dy = this.y - this.game.player.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Only show indicator when player is nearby
+        if (distance < 200) {
+          ctx.font = '12px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillStyle = 'white';
+          ctx.fillText('Pass Under', this.x, this.y - this.radius - 15);
+        }
+      }
+    }
   }
 }

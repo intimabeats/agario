@@ -10,7 +10,7 @@ export class AI {
     this.y = Math.random() * game.worldSize;
     this.targetX = this.x;
     this.targetY = this.y;
-    this.baseSpeed = 3.5; // Base speed for AI
+    this.baseSpeed = 3.5;
     this.speed = this.baseSpeed;
     
     // Size and growth
@@ -20,8 +20,8 @@ export class AI {
     this.score = 0;
     
     // Growth and shrink rates
-    this.growthRate = 2.0; // Slightly lower than player for balance
-    this.shrinkRate = 0.008; // Slightly higher than player for balance
+    this.growthRate = 1.5;
+    this.shrinkRate = 0.005;
     
     // State
     this.isDead = false;
@@ -32,18 +32,20 @@ export class AI {
       mass: this.mass,
       // Cell membrane properties
       membrane: {
-        points: 20, // Number of points around the membrane
-        elasticity: 0.3, // How elastic the membrane is (0-1)
-        distortion: 0.15, // Maximum distortion amount
-        oscillation: 0.05, // Natural oscillation amount
-        oscillationSpeed: 1.5, // Speed of oscillation
-        phase: Math.random() * Math.PI * 2, // Random starting phase
-        vertices: [] // Will store the membrane vertices
-      }
+        points: 20,
+        elasticity: 0.3,
+        distortion: 0.15,
+        oscillation: 0.05,
+        oscillationSpeed: 1.5,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      },
+      // Z-index for layering (smaller cells can pass under viruses)
+      z: 0
     }];
     
     // AI behavior
-    this.state = 'wander'; // wander, chase, flee, split
+    this.state = 'wander';
     this.targetEntity = null;
     this.decisionCooldown = 0;
     this.splitCooldown = 0;
@@ -51,14 +53,36 @@ export class AI {
     
     // Ejection settings
     this.ejectCooldown = 0;
-    this.ejectCooldownTime = 500; // 500ms between ejections (slower than player)
+    this.ejectCooldownTime = 500;
+    this.ejectSpeed = 25;
+    this.ejectDeceleration = 0.95;
+    this.ejectDistance = 2;
     
     // Cell collision physics
-    this.cellCollisionElasticity = 0.7; // How bouncy cell collisions are (0-1)
-    this.cellRepulsionForce = 0.15; // Force applied when cells collide
+    this.cellCollisionElasticity = 0.7;
+    this.cellRepulsionForce = 0.05;
     
     // Initialize cell membranes
     this.initCellMembranes();
+    
+    // Personality traits (randomized for each AI)
+    this.personality = {
+      aggression: 0.3 + Math.random() * 0.7, // How likely to chase and attack
+      caution: 0.2 + Math.random() * 0.6,    // How careful around larger cells
+      greed: 0.4 + Math.random() * 0.6,      // How focused on food collection
+      splitHappiness: 0.3 + Math.random() * 0.7, // How eager to split
+      ejectHappiness: 0.2 + Math.random() * 0.5  // How eager to eject mass
+    };
+    
+    // Decision making weights
+    this.weights = {
+      foodValue: 1.0,
+      playerThreatValue: 2.0,
+      playerPreyValue: 1.5,
+      virusValue: -1.0,
+      virusHideValue: 0.8,
+      edgeAvoidanceValue: -0.5
+    };
   }
   
   initCellMembranes() {
@@ -184,7 +208,7 @@ export class AI {
     const avgRadius = this.cells.reduce((sum, cell) => sum + cell.radius, 0) / this.cells.length;
     
     // Speed decreases as size increases, but never below a minimum threshold
-    const speedFactor = Math.max(0.3, Math.min(1, this.baseRadius / avgRadius));
+    const speedFactor = Math.max(0.3, Math.min(1, Math.pow(this.baseRadius / avgRadius, 0.4)));
     this.speed = this.baseSpeed * speedFactor;
   }
   
@@ -197,155 +221,255 @@ export class AI {
     // Set next decision time (0.5 - 1.5 seconds)
     this.decisionCooldown = now + 500 + Math.random() * 1000;
     
+    // Get nearby entities
+    const nearbyEntities = this.game.getEntitiesInRange(
+      this.x, this.y, 
+      Math.max(300, this.radius * 5), 
+      ['foods', 'viruses', 'powerUps', 'ais', 'player']
+    );
+    
     // Find nearest player
-    const player = this.game.player;
     let nearestPlayer = null;
     let nearestPlayerDistance = Infinity;
+    let nearestPlayerCell = null;
     
-    if (player && !player.isDead) {
-      const dx = this.x - player.x;
-      const dy = this.y - player.y;
-      nearestPlayerDistance = Math.sqrt(dx * dx + dy * dy);
-      nearestPlayer = player;
+    if (nearbyEntities.player && nearbyEntities.player.length > 0) {
+      nearbyEntities.player.forEach(entity => {
+        if (!entity.parent || entity.parent.isDead) return;
+        
+        const dx = this.x - entity.x;
+        const dy = this.y - entity.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < nearestPlayerDistance) {
+          nearestPlayerDistance = distance;
+          nearestPlayer = entity.parent;
+          nearestPlayerCell = entity.cell;
+        }
+      });
     }
     
     // Find nearest AI
     let nearestAI = null;
     let nearestAIDistance = Infinity;
+    let nearestAICell = null;
     
-    this.game.ais.forEach(ai => {
-      if (ai.id === this.id || ai.isDead) return;
-      
-      // Skip team members in team mode
-      if (this.game.gameMode === 'teams' && this.team === ai.team) return;
-      
-      const dx = this.x - ai.x;
-      const dy = this.y - ai.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distance < nearestAIDistance) {
-        nearestAIDistance = distance;
-        nearestAI = ai;
-      }
-    });
+    if (nearbyEntities.ais && nearbyEntities.ais.length > 0) {
+      nearbyEntities.ais.forEach(entity => {
+        if (entity.parent && entity.parent.id === this.id || entity.parent.isDead) return;
+        
+        // Skip team members in team mode
+        if (this.game.gameMode === 'teams' && this.team === entity.parent.team) return;
+        
+        const dx = this.x - entity.x;
+        const dy = this.y - entity.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < nearestAIDistance) {
+          nearestAIDistance = distance;
+          nearestAI = entity.parent;
+          nearestAICell = entity.cell;
+        }
+      });
+    }
     
     // Find nearest food
     let nearestFood = null;
     let nearestFoodDistance = Infinity;
     
-    this.game.foods.forEach(food => {
-      const dx = this.x - food.x;
-      const dy = this.y - food.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distance < nearestFoodDistance) {
-        nearestFoodDistance = distance;
-        nearestFood = food;
-      }
-    });
+    if (nearbyEntities.foods && nearbyEntities.foods.length > 0) {
+      nearbyEntities.foods.forEach(food => {
+        const dx = this.x - food.x;
+        const dy = this.y - food.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < nearestFoodDistance) {
+          nearestFoodDistance = distance;
+          nearestFood = food;
+        }
+      });
+    }
     
     // Find nearest virus
     let nearestVirus = null;
     let nearestVirusDistance = Infinity;
     
-    this.game.viruses.forEach(virus => {
-      const dx = this.x - virus.x;
-      const dy = this.y - virus.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distance < nearestVirusDistance) {
-        nearestVirusDistance = distance;
-        nearestVirus = virus;
-      }
-    });
+    if (nearbyEntities.viruses && nearbyEntities.viruses.length > 0) {
+      nearbyEntities.viruses.forEach(virus => {
+        const dx = this.x - virus.x;
+        const dy = this.y - virus.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < nearestVirusDistance) {
+          nearestVirusDistance = distance;
+          nearestVirus = virus;
+        }
+      });
+    }
     
     // Decision making
     const myLargestCell = this.cells.reduce((largest, cell) => 
       cell.radius > largest.radius ? cell : largest, this.cells[0]);
     
-    // Flee from larger entities
-    if (nearestPlayer && nearestPlayerDistance < 300 && 
-        nearestPlayer.radius > myLargestCell.radius * 1.3) {
+    // Calculate threat and opportunity scores
+    let threatScore = 0;
+    let opportunityScore = 0;
+    let targetScore = 0;
+    let bestTarget = null;
+    let bestTargetType = null;
+    
+    // Evaluate player threat/opportunity
+    if (nearestPlayer) {
+      const playerLargestCell = nearestPlayer.cells.reduce((largest, cell) => 
+        cell.radius > largest.radius ? cell : largest, nearestPlayer.cells[0]);
+      
+      if (playerLargestCell.radius > myLargestCell.radius * 1.1) {
+        // Player is a threat
+        const threatFactor = playerLargestCell.radius / myLargestCell.radius;
+        const distanceFactor = Math.max(0, 1 - nearestPlayerDistance / 300);
+        threatScore += threatFactor * distanceFactor * this.weights.playerThreatValue;
+      } else if (myLargestCell.radius > playerLargestCell.radius * 1.1) {
+        // Player is prey
+        const opportunityFactor = myLargestCell.radius / playerLargestCell.radius;
+        const distanceFactor = Math.max(0, 1 - nearestPlayerDistance / 300);
+        const score = opportunityFactor * distanceFactor * this.weights.playerPreyValue * this.personality.aggression;
+        
+        if (score > targetScore) {
+          targetScore = score;
+          bestTarget = nearestPlayer;
+          bestTargetType = 'player';
+        }
+      }
+    }
+    
+    // Evaluate AI threat/opportunity
+    if (nearestAI) {
+      const aiLargestCell = nearestAI.cells.reduce((largest, cell) => 
+        cell.radius > largest.radius ? cell : largest, nearestAI.cells[0]);
+      
+      if (aiLargestCell.radius > myLargestCell.radius * 1.1) {
+        // AI is a threat
+        const threatFactor = aiLargestCell.radius / myLargestCell.radius;
+        const distanceFactor = Math.max(0, 1 - nearestAIDistance / 300);
+        threatScore += threatFactor * distanceFactor * this.weights.playerThreatValue;
+      } else if (myLargestCell.radius > aiLargestCell.radius * 1.1) {
+        // AI is prey
+        const opportunityFactor = myLargestCell.radius / aiLargestCell.radius;
+        const distanceFactor = Math.max(0, 1 - nearestAIDistance / 300);
+        const score = opportunityFactor * distanceFactor * this.weights.playerPreyValue * this.personality.aggression;
+        
+        if (score > targetScore) {
+          targetScore = score;
+          bestTarget = nearestAI;
+          bestTargetType = 'ai';
+        }
+      }
+    }
+    
+    // Evaluate food opportunity
+    if (nearestFood) {
+      const distanceFactor = Math.max(0, 1 - nearestFoodDistance / 200);
+      const foodValue = nearestFood.mass * this.weights.foodValue * this.personality.greed;
+      const score = foodValue * distanceFactor;
+      
+      if (score > targetScore) {
+        targetScore = score;
+        bestTarget = nearestFood;
+        bestTargetType = 'food';
+      }
+    }
+    
+    // Evaluate virus threat/opportunity
+    if (nearestVirus) {
+      const distanceFactor = Math.max(0, 1 - nearestVirusDistance / 200);
+      
+      if (myLargestCell.radius > nearestVirus.radius * 1.15) {
+        // Virus can split us - avoid if we're big
+        const threatFactor = myLargestCell.radius / nearestVirus.radius;
+        threatScore += threatFactor * distanceFactor * Math.abs(this.weights.virusValue) * (1 - this.personality.aggression);
+      } else if (myLargestCell.radius < nearestVirus.radius * 0.9) {
+        // We can hide behind virus if we're small
+        const score = distanceFactor * this.weights.virusHideValue * this.personality.caution;
+        
+        if (score > targetScore && threatScore > 0) {
+          targetScore = score;
+          bestTarget = nearestVirus;
+          bestTargetType = 'virusHide';
+        }
+      }
+    }
+    
+    // Edge avoidance
+    const edgeDistance = Math.min(
+      this.x, 
+      this.y, 
+      this.game.worldSize - this.x, 
+      this.game.worldSize - this.y
+    );
+    
+    if (edgeDistance < 100) {
+      const edgeFactor = Math.max(0, 1 - edgeDistance / 100);
+      threatScore += edgeFactor * Math.abs(this.weights.edgeAvoidanceValue);
+    }
+    
+    // Make final decision
+    if (threatScore > targetScore * this.personality.caution) {
+      // Flee from threats
       this.state = 'flee';
-      this.targetEntity = nearestPlayer;
+      
+      // Determine what to flee from
+      if (nearestPlayer && nearestPlayer.radius > myLargestCell.radius * 1.1 && 
+          nearestPlayerDistance < nearestAIDistance) {
+        this.targetEntity = nearestPlayer;
+      } else if (nearestAI && nearestAI.radius > myLargestCell.radius * 1.1) {
+        this.targetEntity = nearestAI;
+      } else if (nearestVirus && myLargestCell.radius > nearestVirus.radius * 1.15 && 
+                nearestVirusDistance < 150) {
+        this.targetEntity = nearestVirus;
+      } else {
+        // Flee from edge
+        if (edgeDistance < 100) {
+          this.targetX = this.x + (this.x < this.game.worldSize / 2 ? 200 : -200);
+          this.targetY = this.y + (this.y < this.game.worldSize / 2 ? 200 : -200);
+          this.targetEntity = null;
+        }
+      }
       
       // Try to eject mass to move faster when fleeing
-      if (myLargestCell.radius > this.baseRadius * 3 && Math.random() < 0.3) {
+      if (myLargestCell.radius > this.baseRadius * 3 && Math.random() < this.personality.ejectHappiness) {
         this.ejectMass();
       }
-      
-      return;
-    }
-    
-    if (nearestAI && nearestAIDistance < 300 && 
-        nearestAI.radius > myLargestCell.radius * 1.3) {
-      this.state = 'flee';
-      this.targetEntity = nearestAI;
-      
-      // Try to eject mass to move faster when fleeing
-      if (myLargestCell.radius > this.baseRadius * 3 && Math.random() < 0.3) {
-        this.ejectMass();
-      }
-      
-      return;
-    }
-    
-    // Avoid viruses if we're big
-    if (nearestVirus && nearestVirusDistance < 200 && 
-        myLargestCell.radius > nearestVirus.radius * 1.15) {
-      this.state = 'flee';
-      this.targetEntity = nearestVirus;
-      return;
-    }
-    
-    // Chase smaller entities
-    if (nearestPlayer && nearestPlayerDistance < 400 && 
-        myLargestCell.radius > nearestPlayer.radius * 1.3) {
+    } else if (bestTarget) {
+      // Chase opportunity
       this.state = 'chase';
-      this.targetEntity = nearestPlayer;
+      this.targetEntity = bestTarget;
       
       // Try to split if we're much bigger and close enough
-      if (myLargestCell.radius > nearestPlayer.radius * 2 && 
-          nearestPlayerDistance < 150 && 
-          now > this.splitCooldown && 
-          this.cells.length < 8) {
-        this.split();
+      if (bestTargetType === 'player' || bestTargetType === 'ai') {
+        const targetLargestCell = bestTarget.cells.reduce((largest, cell) => 
+          cell.radius > largest.radius ? cell : largest, bestTarget.cells[0]);
+        
+        const distance = bestTargetType === 'player' ? nearestPlayerDistance : nearestAIDistance;
+        
+        if (myLargestCell.radius > targetLargestCell.radius * 2 && 
+            distance < 150 && 
+            now > this.splitCooldown && 
+            this.cells.length < 8 &&
+            Math.random() < this.personality.splitHappiness) {
+          this.split();
+        }
       }
+    } else {
+      // Wander randomly
+      this.state = 'wander';
+      this.targetX = this.x + (Math.random() * 400 - 200);
+      this.targetY = this.y + (Math.random() * 400 - 200);
+      this.targetEntity = null;
       
-      return;
+      // Keep within world bounds
+      this.targetX = Math.max(100, Math.min(this.game.worldSize - 100, this.targetX));
+      this.targetY = Math.max(100, Math.min(this.game.worldSize - 100, this.targetY));
     }
-    
-    if (nearestAI && nearestAIDistance < 400 && 
-        myLargestCell.radius > nearestAI.radius * 1.3) {
-      this.state = 'chase';
-      this.targetEntity = nearestAI;
-      
-      // Try to split if we're much bigger and close enough
-      if (myLargestCell.radius > nearestAI.radius * 2 && 
-          nearestAIDistance < 150 && 
-          now > this.splitCooldown && 
-          this.cells.length < 8) {
-        this.split();
-      }
-      
-      return;
-    }
-    
-    // Go for food if nearby
-    if (nearestFood && nearestFoodDistance < 300) {
-      this.state = 'chase';
-      this.targetEntity = nearestFood;
-      return;
-    }
-    
-    // Wander randomly
-    this.state = 'wander';
-    this.targetX = this.x + (Math.random() * 400 - 200);
-    this.targetY = this.y + (Math.random() * 400 - 200);
-    
-    // Keep within world bounds
-    this.targetX = Math.max(0, Math.min(this.game.worldSize, this.targetX));
-    this.targetY = Math.max(0, Math.min(this.game.worldSize, this.targetY));
   }
   
   moveTowardsTarget() {
@@ -366,8 +490,8 @@ export class AI {
     }
     
     // Keep target within world bounds
-    this.targetX = Math.max(0, Math.min(this.game.worldSize, this.targetX));
-    this.targetY = Math.max(0, Math.min(this.game.worldSize, this.targetY));
+    this.targetX = Math.max(100, Math.min(this.game.worldSize - 100, this.targetX));
+    this.targetY = Math.max(100, Math.min(this.game.worldSize - 100, this.targetY));
     
     // Move cells
     if (this.cells.length === 1) {
@@ -381,7 +505,6 @@ export class AI {
         const moveSpeed = this.speed * (30 / cell.radius);
         const moveX = (dx / distance) * Math.min(moveSpeed, distance);
         const moveY = (dy / distance) * Math.min(moveSpeed, distance);
-        
         cell.x += moveX;
         cell.y += moveY;
         
@@ -427,9 +550,35 @@ export class AI {
   }
   
   checkCollisions() {
+    // Get nearby entities
+    const nearbyEntities = this.game.getEntitiesInRange(
+      this.x, this.y, 
+      Math.max(200, this.radius * 3), 
+      ['foods', 'viruses', 'powerUps', 'ais', 'player']
+    );
+    
     // Check food collisions
-    this.game.foods = this.game.foods.filter(food => {
-      let eaten = false;
+    this.checkFoodCollisions(nearbyEntities.foods);
+    
+    // Check virus collisions
+    this.checkVirusCollisions(nearbyEntities.viruses);
+    
+    // Check power-up collisions
+    this.checkPowerUpCollisions(nearbyEntities.powerUps);
+    
+    // Check player collisions
+    this.checkPlayerCollisions(nearbyEntities.player);
+    
+    // Check AI collisions
+    this.checkAICollisions(nearbyEntities.ais);
+  }
+  
+  checkFoodCollisions(foods) {
+    if (!foods || !foods.length) return;
+    
+    foods.forEach(food => {
+      // Skip food ejected by this AI (recently ejected)
+      if (food.ejectedBy === this.id && Date.now() - food.ejectionTime < 1000) return;
       
       this.cells.forEach(cell => {
         const dx = cell.x - food.x;
@@ -440,7 +589,7 @@ export class AI {
           // Eat food with growth rate
           cell.mass += food.mass * this.growthRate;
           cell.radius = Math.sqrt(cell.mass / Math.PI);
-          eaten = true;
+          this.game.removeFood(food);
           
           // Create particles
           if (this.game.particles) {
@@ -451,14 +600,13 @@ export class AI {
           this.distortMembrane(cell, -dx/distance, -dy/distance, 0.2);
         }
       });
-      
-      return !eaten;
     });
+  }
+  
+  checkVirusCollisions(viruses) {
+    if (!viruses || !viruses.length) return;
     
-    // Check virus collisions
-    this.game.viruses = this.game.viruses.filter(virus => {
-      let collision = false;
-      
+    viruses.forEach(virus => {
       this.cells.forEach((cell, index) => {
         const dx = cell.x - virus.x;
         const dy = cell.y - virus.y;
@@ -467,158 +615,206 @@ export class AI {
         if (distance < cell.radius + virus.radius) {
           if (cell.radius > virus.radius * 1.15) {
             // Split the cell if it's big enough
-            if (this.cells.length < 8) {
-              this.splitCell(index, virus.x, virus.y);
+            if (this.cells.length < 16) {
+              // Split in multiple directions
+              const splitDirections = 3 + Math.floor(Math.random() * 2); // 3-4 splits
+              for (let i = 0; i < splitDirections; i++) {
+                const angle = (i / splitDirections) * Math.PI * 2;
+                const targetX = virus.x + Math.cos(angle) * virus.radius * 2;
+                const targetY = virus.y + Math.sin(angle) * virus.radius * 2;
+                this.splitCell(index, targetX, targetY);
+              }
+              
+              // Add virus mass to the cell
+              const virusMass = virus.mass * 0.5; // Only get half the mass
+              cell.mass += virusMass;
+              cell.radius = Math.sqrt(cell.mass / Math.PI);
               
               // Create particles
               if (this.game.particles) {
                 this.game.particles.createVirusParticles(virus.x, virus.y);
               }
+              
+              // Remove the virus
+              this.game.removeVirus(virus);
             }
-            collision = true;
+          } else if (virus.canPassUnder(cell.radius)) {
+            // Smaller cells pass under the virus
+            cell.z = -1;
+            setTimeout(() => { cell.z = 0; }, 1000);
           } else {
-            // Damage the cell if it's too small
-            cell.mass *= 0.75;
-            cell.radius = Math.sqrt(cell.mass / Math.PI);
+            // Just push the cell away slightly
+            const pushFactor = 0.5;
+            const pushX = (dx / distance) * pushFactor;
+            const pushY = (dy / distance) * pushFactor;
             
-            // Distort membrane on impact
-            this.distortMembrane(cell, dx/distance, dy/distance, 0.8);
+            cell.x += pushX;
+            cell.y += pushY;
           }
         }
       });
-      
-      return !collision;
     });
+  }
+  
+  checkPowerUpCollisions(powerUps) {
+    if (!powerUps || !powerUps.length) return;
     
-    // Check player collision
-    if (this.game.player && !this.game.player.isDead) {
-      // Skip collision check with team members in team mode
-      if (this.game.gameMode === 'teams' && this.team === this.game.player.team) return;
-      
-      this.cells.forEach((cell, cellIndex) => {
-        this.game.player.cells.forEach(playerCell => {
-          const dx = cell.x - playerCell.x;
-          const dy = cell.y - playerCell.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+    powerUps.forEach(powerUp => {
+      this.cells.forEach(cell => {
+        const dx = cell.x - powerUp.x;
+        const dy = cell.y - powerUp.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < cell.radius + powerUp.radius) {
+          // AI doesn't use power-ups, but we'll remove it
+          this.game.removePowerUp(powerUp);
           
-          if (distance < cell.radius + playerCell.radius) {
-            // AI eats player
-            if (cell.radius > playerCell.radius * 1.15 && !this.game.player.powerUps.shield.active) {
-              cell.mass += playerCell.mass;
-              cell.radius = Math.sqrt(cell.mass / Math.PI);
-              playerCell.mass = 0;
-              
-              // Create particles
-              if (this.game.particles) {
-                this.game.particles.createEatParticles(playerCell.x, playerCell.y, this.game.player.color);
-              }
-              
-              // Distort membrane
-              this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
-            } 
-            // Player eats AI
-            else if (playerCell.radius > cell.radius * 1.15) {
-              playerCell.mass += cell.mass;
-              playerCell.radius = Math.sqrt(playerCell.mass / Math.PI);
-              this.cells.splice(cellIndex, 1);
-              
-              // Create particles
-              if (this.game.particles) {
-                this.game.particles.createEatParticles(cell.x, cell.y, this.color);
-              }
-              
-              // Check if AI is dead
-              if (this.cells.length === 0) {
-                this.isDead = true;
-              }
-            }
-            // Cells are similar size - bounce off each other
-            else {
-              // Calculate repulsion vector
-              const overlap = cell.radius + playerCell.radius - distance;
-              if (overlap > 0) {
-                // Normalize direction
-                const nx = dx / distance;
-                const ny = dy / distance;
-                
-                // Apply repulsion force
-                const repulsionForce = overlap * this.cellRepulsionForce;
-                cell.x += nx * repulsionForce;
-                cell.y += ny * repulsionForce;
-                
-                // Distort membrane on collision
-                this.distortMembrane(cell, nx, ny, 0.3);
-              }
-            }
+          // Create particles
+          if (this.game.particles) {
+            this.game.particles.createPowerUpParticles(powerUp.x, powerUp.y, powerUp.color);
           }
-        });
+          
+          // Distort membrane
+          this.distortMembrane(cell, -dx/distance, -dy/distance, 0.4);
+        }
       });
-    }
+    });
+  }
+  
+  checkPlayerCollisions(playerEntities) {
+    if (!playerEntities || !playerEntities.length) return;
     
-    // Check other AI collisions
-    this.game.ais.forEach(ai => {
-      if (ai.id === this.id || ai.isDead) return;
+    playerEntities.forEach(entity => {
+      if (!entity.parent || entity.parent.isDead) return;
       
       // Skip collision check with team members in team mode
-      if (this.game.gameMode === 'teams' && this.team === ai.team) return;
+      if (this.game.gameMode === 'teams' && this.team === entity.parent.team) return;
+      
+      const playerCell = entity.cell;
       
       this.cells.forEach((cell, cellIndex) => {
-        ai.cells.forEach(otherCell => {
-          const dx = cell.x - otherCell.x;
-          const dy = cell.y - otherCell.y;
-          const distance = Math.sqrt(dx * dx + dy * dy);
+        const dx = cell.x - playerCell.x;
+        const dy = cell.y - playerCell.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < cell.radius + playerCell.radius) {
+          // Calculate overlap percentage
+          const overlap = (cell.radius + playerCell.radius - distance) / 2;
+          const overlapPercentage = overlap / Math.min(cell.radius, playerCell.radius);
           
-          if (distance < cell.radius + otherCell.radius) {
-            // This AI eats other AI
-            if (cell.radius > otherCell.radius * 1.15) {
-              cell.mass += otherCell.mass;
-              cell.radius = Math.sqrt(cell.mass / Math.PI);
-              otherCell.mass = 0;
-              
-              // Create particles
-              if (this.game.particles) {
-                this.game.particles.createEatParticles(otherCell.x, otherCell.y, ai.color);
-              }
-              
-              // Distort membrane
-              this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
-            } 
-            // Other AI eats this AI
-            else if (otherCell.radius > cell.radius * 1.15) {
-              otherCell.mass += cell.mass;
-              otherCell.radius = Math.sqrt(otherCell.mass / Math.PI);
-              this.cells.splice(cellIndex, 1);
-              
-              // Create particles
-              if (this.game.particles) {
-                this.game.particles.createEatParticles(cell.x, cell.y, this.color);
-              }
-              
-              // Check if AI is dead
-              if (this.cells.length === 0) {
-                this.isDead = true;
-              }
+          // AI eats player
+          if (cell.radius > playerCell.radius * 1.1 && overlapPercentage > 0.9) {
+            cell.mass += playerCell.mass;
+            cell.radius = Math.sqrt(cell.mass / Math.PI);
+            playerCell.mass = 0;
+            
+            // Create particles
+            if (this.game.particles) {
+              this.game.particles.createEatParticles(playerCell.x, playerCell.y, entity.parent.color);
             }
-            // Cells are similar size - bounce off each other
-            else {
-              // Calculate repulsion vector
-              const overlap = cell.radius + otherCell.radius - distance;
-              if (overlap > 0) {
-                // Normalize direction
-                const nx = dx / distance;
-                const ny = dy / distance;
-                
-                // Apply repulsion force
-                const repulsionForce = overlap * this.cellRepulsionForce;
-                cell.x += nx * repulsionForce;
-                cell.y += ny * repulsionForce;
-                
-                // Distort membrane on collision
-                this.distortMembrane(cell, nx, ny, 0.3);
-              }
+            
+            // Distort membrane
+            this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
+          } 
+          // Player eats AI
+          else if (playerCell.radius > cell.radius * 1.1 && overlapPercentage > 0.9) {
+            playerCell.mass += cell.mass;
+            playerCell.radius = Math.sqrt(playerCell.mass / Math.PI);
+            this.cells.splice(cellIndex, 1);
+            
+            // Create particles
+            if (this.game.particles) {
+              this.game.particles.createEatParticles(cell.x, cell.y, this.color);
+            }
+            
+            // Check if AI is dead
+            if (this.cells.length === 0) {
+              this.isDead = true;
             }
           }
-        });
+          // Cells are similar size - overlap with minimal push
+          else {
+            // Calculate minimal push to prevent complete overlap
+            const minPushNeeded = Math.max(0, cell.radius + playerCell.radius - distance - 5);
+            if (minPushNeeded > 0) {
+              const pushFactor = 0.05; // Very small push factor
+              const pushX = (dx / distance) * minPushNeeded * pushFactor;
+              const pushY = (dy / distance) * minPushNeeded * pushFactor;
+              
+              cell.x += pushX;
+              cell.y += pushY;
+            }
+          }
+        }
+      });
+    });
+  }
+  
+  checkAICollisions(aiEntities) {
+    if (!aiEntities || !aiEntities.length) return;
+    
+    aiEntities.forEach(entity => {
+      if (!entity.parent || entity.parent.id === this.id || entity.parent.isDead) return;
+      
+      // Skip collision check with team members in team mode
+      if (this.game.gameMode === 'teams' && this.team === entity.parent.team) return;
+      
+      const otherCell = entity.cell;
+      
+      this.cells.forEach((cell, cellIndex) => {
+        const dx = cell.x - otherCell.x;
+        const dy = cell.y - otherCell.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance < cell.radius + otherCell.radius) {
+          // Calculate overlap percentage
+          const overlap = (cell.radius + otherCell.radius - distance) / 2;
+          const overlapPercentage = overlap / Math.min(cell.radius, otherCell.radius);
+          
+          // This AI eats other AI
+          if (cell.radius > otherCell.radius * 1.1 && overlapPercentage > 0.9) {
+            cell.mass += otherCell.mass;
+            cell.radius = Math.sqrt(cell.mass / Math.PI);
+            otherCell.mass = 0;
+            
+            // Create particles
+            if (this.game.particles) {
+              this.game.particles.createEatParticles(otherCell.x, otherCell.y, entity.parent.color);
+            }
+            
+            // Distort membrane
+            this.distortMembrane(cell, -dx/distance, -dy/distance, 0.5);
+          } 
+          // Other AI eats this AI
+          else if (otherCell.radius > cell.radius * 1.1 && overlapPercentage > 0.9) {
+            otherCell.mass += cell.mass;
+            otherCell.radius = Math.sqrt(otherCell.mass / Math.PI);
+            this.cells.splice(cellIndex, 1);
+            
+            // Create particles
+            if (this.game.particles) {
+              this.game.particles.createEatParticles(cell.x, cell.y, this.color);
+            }
+            
+            // Check if AI is dead
+            if (this.cells.length === 0) {
+              this.isDead = true;
+            }
+          }
+          // Cells are similar size - overlap with minimal push
+          else {
+            // Calculate minimal push to prevent complete overlap
+            const minPushNeeded = Math.max(0, cell.radius + otherCell.radius - distance - 5);
+            if (minPushNeeded > 0) {
+              const pushFactor = 0.05; // Very small push factor
+              const pushX = (dx / distance) * minPushNeeded * pushFactor;
+              const pushY = (dy / distance) * minPushNeeded * pushFactor;
+              
+              cell.x += pushX;
+              cell.y += pushY;
+            }
+          }
+        }
       });
     });
   }
@@ -778,9 +974,8 @@ export class AI {
       }
     }
   }
-  
   split() {
-    if (this.cells.length >= 8) return;
+    if (this.cells.length >= 16) return;
     
     const now = Date.now();
     this.splitCooldown = now + 10000; // 10 seconds cooldown
@@ -790,7 +985,7 @@ export class AI {
     const cellsToSplit = [...this.cells];
     
     cellsToSplit.forEach((cell, index) => {
-      if (cell.radius >= this.baseRadius * 1.5 && this.cells.length < 8) {
+      if (cell.radius >= this.baseRadius * 1.5 && this.cells.length < 16) {
         this.splitCell(index);
       }
     });
@@ -835,8 +1030,8 @@ export class AI {
       y: cell.y + dirY * offsetDistance,
       radius: cell.radius,
       mass: newMass,
-      velocityX: dirX * 10,
-      velocityY: dirY * 10,
+      velocityX: dirX * 25, // Increased velocity for better separation
+      velocityY: dirY * 25,
       splitTime: Date.now(),
       membrane: {
         points: cell.membrane.points,
@@ -846,7 +1041,8 @@ export class AI {
         oscillationSpeed: cell.membrane.oscillationSpeed,
         phase: Math.random() * Math.PI * 2,
         vertices: []
-      }
+      },
+      z: 0
     };
     
     // Initialize membrane for new cell
@@ -912,8 +1108,8 @@ export class AI {
           cell.radius = Math.sqrt(cell.mass / Math.PI);
           
           // Calculate ejection position (further from cell)
-          const ejectionX = cell.x + dirX * cell.radius * 1.2;
-          const ejectionY = cell.y + dirY * cell.radius * 1.2;
+          const ejectionX = cell.x + dirX * cell.radius * this.ejectDistance;
+          const ejectionY = cell.y + dirY * cell.radius * this.ejectDistance;
           
           // Create ejected mass as food
           this.game.foods.push({
@@ -922,18 +1118,21 @@ export class AI {
             radius: 4,
             mass: ejectedMass * 0.8,
             color: this.color,
-            velocityX: dirX * 8,
-            velocityY: dirY * 8,
+            velocityX: dirX * this.ejectSpeed,
+            velocityY: dirY * this.ejectSpeed,
             ejectedBy: this.id,
             ejectionTime: Date.now(),
             game: this.game,
             update: function(deltaTime) {
-              // Update position based on velocity
+              // Update position based on velocity with improved deceleration
               const elapsed = Date.now() - this.ejectionTime;
-              const slowdownFactor = Math.max(0, 1 - elapsed / 1000); // Slow down over 1 second
+              const slowdownFactor = Math.pow(this.game.player.ejectDeceleration, elapsed / 16.67);
               
-              this.x += this.velocityX * slowdownFactor * deltaTime;
-              this.y += this.velocityY * slowdownFactor * deltaTime;
+              this.velocityX *= slowdownFactor;
+              this.velocityY *= slowdownFactor;
+              
+              this.x += this.velocityX * deltaTime;
+              this.y += this.velocityY * deltaTime;
               
               // Keep within world bounds
               if (this.game) {
@@ -984,8 +1183,11 @@ export class AI {
   }
   
   draw(ctx) {
+    // Sort cells by z-index to handle layering
+    const sortedCells = [...this.cells].sort((a, b) => a.z - b.z);
+    
     // Draw cells
-    this.cells.forEach(cell => {
+    sortedCells.forEach(cell => {
       // Draw cell with membrane
       this.drawCellWithMembrane(ctx, cell);
       
@@ -1074,5 +1276,235 @@ export class AI {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
       ctx.fill();
     }
+    
+    // Draw "passing under" effect if cell is below others
+    if (cell.z < 0) {
+      ctx.save();
+      ctx.globalAlpha = 0.3;
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+      ctx.beginPath();
+      ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+  
+  // Helper method to calculate if this AI can eat another entity
+  canEat(entity) {
+    if (!entity) return false;
+    
+    // Get largest cell of this AI
+    const myLargestCell = this.cells.reduce((largest, cell) => 
+      cell.radius > largest.radius ? cell : largest, this.cells[0]);
+    
+    // Get largest cell of target entity
+    const targetLargestCell = entity.cells ? 
+      entity.cells.reduce((largest, cell) => cell.radius > largest.radius ? cell : largest, entity.cells[0]) : 
+      entity; // If entity doesn't have cells array, use it directly (like food)
+    
+    // Check if my largest cell is big enough to eat target's largest cell
+    return myLargestCell.radius > targetLargestCell.radius * 1.1;
+  }
+  
+  // Helper method to calculate if this AI should flee from another entity
+  shouldFleeFrom(entity) {
+    if (!entity) return false;
+    
+    // Get largest cell of this AI
+    const myLargestCell = this.cells.reduce((largest, cell) => 
+      cell.radius > largest.radius ? cell : largest, this.cells[0]);
+    
+    // Get largest cell of target entity
+    const targetLargestCell = entity.cells ? 
+      entity.cells.reduce((largest, cell) => cell.radius > largest.radius ? cell : largest, entity.cells[0]) : 
+      entity; // If entity doesn't have cells array, use it directly (like virus)
+    
+    // Check if target's largest cell is big enough to eat my largest cell
+    return targetLargestCell.radius > myLargestCell.radius * 1.1;
+  }
+  
+  // Helper method to calculate overlap percentage between two cells
+  calculateOverlap(cell1, cell2) {
+    const dx = cell1.x - cell2.x;
+    const dy = cell1.y - cell2.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // If cells don't overlap at all
+    if (distance >= cell1.radius + cell2.radius) {
+      return 0;
+    }
+    
+    // Calculate overlap
+    const overlap = (cell1.radius + cell2.radius - distance) / 2;
+    
+    // Calculate overlap percentage relative to the smaller cell
+    return overlap / Math.min(cell1.radius, cell2.radius);
+  }
+  
+  // Helper method to find the best direction to flee
+  findFleeDirection() {
+    if (!this.targetEntity) return { x: this.x, y: this.y };
+    
+    // Basic direction away from threat
+    const dx = this.x - this.targetEntity.x;
+    const dy = this.y - this.targetEntity.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance === 0) {
+      // If somehow at the same position, pick a random direction
+      const angle = Math.random() * Math.PI * 2;
+      return {
+        x: this.x + Math.cos(angle) * 300,
+        y: this.y + Math.sin(angle) * 300
+      };
+    }
+    
+    // Normalize direction
+    const dirX = dx / distance;
+    const dirY = dy / distance;
+    
+    // Check if fleeing towards a wall
+    const fleeX = this.x + dirX * 300;
+    const fleeY = this.y + dirY * 300;
+    
+    const margin = 100;
+    const isNearLeftWall = fleeX < margin;
+    const isNearRightWall = fleeX > this.game.worldSize - margin;
+    const isNearTopWall = fleeY < margin;
+    const isNearBottomWall = fleeY > this.game.worldSize - margin;
+    
+    // If fleeing towards a wall, adjust direction
+    if (isNearLeftWall || isNearRightWall || isNearTopWall || isNearBottomWall) {
+      // Try different angles to find a good escape route
+      const angles = [Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, 5*Math.PI/4, 3*Math.PI/2, 7*Math.PI/4];
+      
+      for (const angleOffset of angles) {
+        const newAngle = Math.atan2(dirY, dirX) + angleOffset;
+        const newDirX = Math.cos(newAngle);
+        const newDirY = Math.sin(newAngle);
+        
+        const newFleeX = this.x + newDirX * 300;
+        const newFleeY = this.y + newDirY * 300;
+        
+        // Check if this direction avoids walls
+        if (newFleeX > margin && 
+            newFleeX < this.game.worldSize - margin && 
+            newFleeY > margin && 
+            newFleeY < this.game.worldSize - margin) {
+          return { x: newFleeX, y: newFleeY };
+        }
+      }
+      
+      // If all directions lead to walls, aim for center
+      return {
+        x: this.game.worldSize / 2,
+        y: this.game.worldSize / 2
+      };
+    }
+    
+    // Return the basic flee direction if not near walls
+    return { x: fleeX, y: fleeY };
+  }
+  
+  // Helper method to find the best food to chase
+  findBestFood() {
+    const nearbyEntities = this.game.getEntitiesInRange(
+      this.x, this.y, 
+      200, 
+      ['foods']
+    );
+    
+    if (!nearbyEntities.foods || nearbyEntities.foods.length === 0) {
+      return null;
+    }
+    
+    // Score each food based on distance and value
+    const scoredFoods = nearbyEntities.foods.map(food => {
+      const dx = this.x - food.x;
+      const dy = this.y - food.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // Skip food ejected by this AI recently
+      if (food.ejectedBy === this.id && Date.now() - food.ejectionTime < 1000) {
+        return { food, score: -1 };
+      }
+      
+      // Calculate score (higher is better)
+      // Value food mass and proximity
+      const score = (food.mass * 10) / (distance + 1);
+      
+      return { food, score };
+    });
+    
+    // Sort by score (highest first) and filter out negative scores
+    const validFoods = scoredFoods.filter(item => item.score > 0);
+    validFoods.sort((a, b) => b.score - a.score);
+    
+    // Return the best food or null if none found
+    return validFoods.length > 0 ? validFoods[0].food : null;
+  }
+  
+  // Helper method to find the safest virus to hide behind
+  findSafeVirus() {
+    if (!this.targetEntity) return null;
+    
+    const nearbyEntities = this.game.getEntitiesInRange(
+      this.x, this.y, 
+      300, 
+      ['viruses']
+    );
+    
+    if (!nearbyEntities.viruses || nearbyEntities.viruses.length === 0) {
+      return null;
+    }
+    
+    // Get my smallest cell
+    const mySmallestCell = this.cells.reduce((smallest, cell) => 
+      cell.radius < smallest.radius ? cell : smallest, this.cells[0]);
+    
+    // Only consider viruses that we can hide behind
+    const safeViruses = nearbyEntities.viruses.filter(virus => 
+      virus.canPassUnder(mySmallestCell.radius)
+    );
+    
+    if (safeViruses.length === 0) return null;
+    
+    // Find virus that's between us and the threat
+    const threatX = this.targetEntity.x;
+    const threatY = this.targetEntity.y;
+    
+    // Score each virus based on position relative to threat
+    const scoredViruses = safeViruses.map(virus => {
+      // Vector from AI to threat
+      const aiToThreatX = threatX - this.x;
+      const aiToThreatY = threatY - this.y;
+      const aiToThreatDist = Math.sqrt(aiToThreatX * aiToThreatX + aiToThreatY * aiToThreatY);
+      
+      // Vector from AI to virus
+      const aiToVirusX = virus.x - this.x;
+      const aiToVirusY = virus.y - this.y;
+      const aiToVirusDist = Math.sqrt(aiToVirusX * aiToVirusX + aiToVirusY * aiToVirusY);
+      
+      // Calculate dot product to see if virus is in direction of threat
+      const dotProduct = (aiToVirusX * aiToThreatX + aiToVirusY * aiToThreatY) / 
+                         (aiToVirusDist * aiToThreatDist);
+      
+      // Higher score for viruses between AI and threat
+      const directionScore = Math.max(0, dotProduct);
+      
+      // Distance factor (prefer closer viruses)
+      const distanceFactor = 1 - Math.min(1, aiToVirusDist / 300);
+      
+      // Final score
+      const score = directionScore * distanceFactor;
+      
+      return { virus, score };
+    });
+    
+    // Sort by score (highest first)
+    scoredViruses.sort((a, b) => b.score - a.score);
+    
+    // Return the best virus or null if none found
+    return scoredViruses.length > 0 ? scoredViruses[0].virus : null;
   }
 }
