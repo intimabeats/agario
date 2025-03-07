@@ -1,3 +1,4 @@
+
 export class AI {
   constructor(name, color, game) {
     this.id = 'ai-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
@@ -10,7 +11,7 @@ export class AI {
     this.y = Math.random() * game.worldSize;
     this.targetX = this.x;
     this.targetY = this.y;
-    this.baseSpeed = 3.5;
+    this.baseSpeed = 4.5; // Increased base speed for more dynamic gameplay
     this.speed = this.baseSpeed;
     
     // Size and growth
@@ -50,6 +51,10 @@ export class AI {
     this.decisionCooldown = 0;
     this.splitCooldown = 0;
     this.lastSplitTime = 0;
+    this.lastDirectionChangeTime = Date.now();
+    this.directionChangeCooldown = 2000 + Math.random() * 3000; // 2-5 seconds between direction changes
+    this.movementVector = { x: 0, y: 0 };
+    this.inertia = 0.92; // Higher value means more momentum in movement
     
     // Ejection settings
     this.ejectCooldown = 0;
@@ -60,7 +65,8 @@ export class AI {
     
     // Cell collision physics
     this.cellCollisionElasticity = 0.7;
-    this.cellRepulsionForce = 0.05;
+    this.cellRepulsionForce = 0.05; // Reduced for better overlapping
+    this.foodAttractionRadius = 5;
     
     // Initialize cell membranes
     this.initCellMembranes();
@@ -71,7 +77,9 @@ export class AI {
       caution: 0.2 + Math.random() * 0.6,    // How careful around larger cells
       greed: 0.4 + Math.random() * 0.6,      // How focused on food collection
       splitHappiness: 0.3 + Math.random() * 0.7, // How eager to split
-      ejectHappiness: 0.2 + Math.random() * 0.5  // How eager to eject mass
+      ejectHappiness: 0.2 + Math.random() * 0.5, // How eager to eject mass
+      movementStyle: Math.random(),          // 0 = straight lines, 1 = erratic movement
+      directionChangeFrequency: 0.2 + Math.random() * 0.8 // How often to change direction
     };
     
     // Decision making weights
@@ -83,6 +91,9 @@ export class AI {
       virusHideValue: 0.8,
       edgeAvoidanceValue: -0.5
     };
+    
+    // Initialize with a random movement direction
+    this.setRandomMovementDirection();
   }
   
   initCellMembranes() {
@@ -117,8 +128,8 @@ export class AI {
     // Update speed based on size
     this.updateSpeedBasedOnSize();
     
-    // Move towards target
-    this.moveTowardsTarget();
+    // Move towards target with inertia
+    this.moveWithInertia(deltaTime);
     
     // Check collisions
     this.checkCollisions();
@@ -208,14 +219,29 @@ export class AI {
     const avgRadius = this.cells.reduce((sum, cell) => sum + cell.radius, 0) / this.cells.length;
     
     // Speed decreases as size increases, but never below a minimum threshold
-    const speedFactor = Math.max(0.3, Math.min(1, Math.pow(this.baseRadius / avgRadius, 0.4)));
+    // Modified to be less punishing for medium sizes
+    const speedFactor = Math.max(0.4, Math.min(1.2, Math.pow(this.baseRadius / avgRadius, 0.35)));
     this.speed = this.baseSpeed * speedFactor;
   }
   
   makeDecisions(deltaTime) {
     const now = Date.now();
     
-    // Only make decisions periodically
+    // Check if it's time to change direction for more natural movement
+    if (now - this.lastDirectionChangeTime > this.directionChangeCooldown * (1 / this.personality.directionChangeFrequency)) {
+      this.lastDirectionChangeTime = now;
+      this.directionChangeCooldown = 2000 + Math.random() * 3000; // 2-5 seconds
+      
+      // Small chance to completely change direction
+      if (Math.random() < 0.3) {
+        this.setRandomMovementDirection();
+      } else {
+        // Otherwise just slightly adjust current direction
+        this.adjustMovementDirection();
+      }
+    }
+    
+    // Only make major decisions periodically
     if (now < this.decisionCooldown) return;
     
     // Set next decision time (0.5 - 1.5 seconds)
@@ -460,11 +486,15 @@ export class AI {
         }
       }
     } else {
-      // Wander randomly
+      // Continue wandering with current direction
       this.state = 'wander';
-      this.targetX = this.x + (Math.random() * 400 - 200);
-      this.targetY = this.y + (Math.random() * 400 - 200);
-      this.targetEntity = null;
+      
+      // Occasionally adjust target to maintain natural movement
+      if (Math.random() < 0.3) {
+        const wanderDistance = 300 + Math.random() * 200;
+        this.targetX = this.x + this.movementVector.x * wanderDistance;
+        this.targetY = this.y + this.movementVector.y * wanderDistance;
+      }
       
       // Keep within world bounds
       this.targetX = Math.max(100, Math.min(this.game.worldSize - 100, this.targetX));
@@ -472,7 +502,46 @@ export class AI {
     }
   }
   
-  moveTowardsTarget() {
+  setRandomMovementDirection() {
+    // Set a random movement direction vector
+    const angle = Math.random() * Math.PI * 2;
+    this.movementVector = {
+      x: Math.cos(angle),
+      y: Math.sin(angle)
+    };
+    
+    // Set initial target based on this direction
+    const distance = 300 + Math.random() * 200;
+    this.targetX = this.x + this.movementVector.x * distance;
+    this.targetY = this.y + this.movementVector.y * distance;
+    
+    // Keep within world bounds
+    this.targetX = Math.max(100, Math.min(this.game.worldSize - 100, this.targetX));
+    this.targetY = Math.max(100, Math.min(this.game.worldSize - 100, this.targetY));
+  }
+  
+  adjustMovementDirection() {
+    // Slightly adjust current movement direction for more natural movement
+    const adjustmentAngle = (Math.random() - 0.5) * Math.PI * 0.5; // ±45 degrees
+    const currentAngle = Math.atan2(this.movementVector.y, this.movementVector.x);
+    const newAngle = currentAngle + adjustmentAngle;
+    
+    this.movementVector = {
+      x: Math.cos(newAngle),
+      y: Math.sin(newAngle)
+    };
+    
+    // Set new target based on adjusted direction
+    const distance = 300 + Math.random() * 200;
+    this.targetX = this.x + this.movementVector.x * distance;
+    this.targetY = this.y + this.movementVector.y * distance;
+    
+    // Keep within world bounds
+    this.targetX = Math.max(100, Math.min(this.game.worldSize - 100, this.targetX));
+    this.targetY = Math.max(100, Math.min(this.game.worldSize - 100, this.targetY));
+  }
+  
+  moveWithInertia(deltaTime) {
     // Update target based on state
     if (this.state === 'chase' && this.targetEntity) {
       this.targetX = this.targetEntity.x;
@@ -493,7 +562,7 @@ export class AI {
     this.targetX = Math.max(100, Math.min(this.game.worldSize - 100, this.targetX));
     this.targetY = Math.max(100, Math.min(this.game.worldSize - 100, this.targetY));
     
-    // Move cells
+    // Move cells with inertia for more natural movement
     if (this.cells.length === 1) {
       // Single cell movement
       const cell = this.cells[0];
@@ -502,11 +571,18 @@ export class AI {
       const distance = Math.sqrt(dx * dx + dy * dy);
       
       if (distance > 0) {
+        // Calculate desired velocity
         const moveSpeed = this.speed * (30 / cell.radius);
-        const moveX = (dx / distance) * Math.min(moveSpeed, distance);
-        const moveY = (dy / distance) * Math.min(moveSpeed, distance);
-        cell.x += moveX;
-        cell.y += moveY;
+        const desiredVx = (dx / distance) * Math.min(moveSpeed, distance);
+        const desiredVy = (dy / distance) * Math.min(moveSpeed, distance);
+        
+        // Apply inertia - blend current movement vector with desired direction
+        this.movementVector.x = this.movementVector.x * this.inertia + desiredVx * (1 - this.inertia);
+        this.movementVector.y = this.movementVector.y * this.inertia + desiredVy * (1 - this.inertia);
+        
+        // Apply movement
+        cell.x += this.movementVector.x;
+        cell.y += this.movementVector.y;
         
         // Update AI position
         this.x = cell.x;
@@ -520,17 +596,39 @@ export class AI {
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         if (distance > 0) {
+          // Calculate desired velocity
           const moveSpeed = this.speed * (30 / cell.radius);
-          const moveX = (dx / distance) * Math.min(moveSpeed, distance);
-          const moveY = (dy / distance) * Math.min(moveSpeed, distance);
+          const desiredVx = (dx / distance) * Math.min(moveSpeed, distance);
+          const desiredVy = (dy / distance) * Math.min(moveSpeed, distance);
           
-          cell.x += moveX;
-          cell.y += moveY;
+          // Apply inertia - blend current movement vector with desired direction
+          this.movementVector.x = this.movementVector.x * this.inertia + desiredVx * (1 - this.inertia);
+          this.movementVector.y = this.movementVector.y * this.inertia + desiredVy * (1 - this.inertia);
+          
+          // Apply movement
+          cell.x += this.movementVector.x;
+          cell.y += this.movementVector.y;
         }
       });
       
       // Update AI position to the center of mass
       this.updateCenterOfMass();
+    }
+    
+    // Add slight randomness to movement for more natural behavior
+    if (Math.random() < 0.05 * this.personality.movementStyle) {
+      const jitter = 0.5 + Math.random() * 1.5;
+      const jitterAngle = Math.random() * Math.PI * 2;
+      
+      this.movementVector.x += Math.cos(jitterAngle) * jitter;
+      this.movementVector.y += Math.sin(jitterAngle) * jitter;
+      
+      // Normalize movement vector if it gets too large
+      const speed = Math.sqrt(this.movementVector.x * this.movementVector.x + this.movementVector.y * this.movementVector.y);
+      if (speed > this.speed * 1.5) {
+        this.movementVector.x = (this.movementVector.x / speed) * this.speed;
+        this.movementVector.y = (this.movementVector.y / speed) * this.speed;
+      }
     }
   }
   
@@ -597,7 +695,7 @@ export class AI {
           }
           
           // Distort membrane in the direction of the food
-          this.distortMembrane(cell, -dx/distance, -dy/distance, 0.2);
+                    this.distortMembrane(cell, -dx/distance, -dy/distance, 0.2);
         }
       });
     });
@@ -974,6 +1072,7 @@ export class AI {
       }
     }
   }
+  
   split() {
     if (this.cells.length >= 16) return;
     
@@ -1081,10 +1180,9 @@ export class AI {
           dirX = this.targetEntity.x - this.x;
           dirY = this.targetEntity.y - this.y;
         } else {
-          // Eject in random direction
-          const angle = Math.random() * Math.PI * 2;
-          dirX = Math.cos(angle);
-          dirY = Math.sin(angle);
+          // Eject in movement direction
+          dirX = this.movementVector.x;
+          dirY = this.movementVector.y;
         }
         
         const distance = Math.sqrt(dirX * dirX + dirY * dirY);
@@ -1287,224 +1385,5 @@ export class AI {
       ctx.fill();
       ctx.restore();
     }
-  }
-  
-  // Helper method to calculate if this AI can eat another entity
-  canEat(entity) {
-    if (!entity) return false;
-    
-    // Get largest cell of this AI
-    const myLargestCell = this.cells.reduce((largest, cell) => 
-      cell.radius > largest.radius ? cell : largest, this.cells[0]);
-    
-    // Get largest cell of target entity
-    const targetLargestCell = entity.cells ? 
-      entity.cells.reduce((largest, cell) => cell.radius > largest.radius ? cell : largest, entity.cells[0]) : 
-      entity; // If entity doesn't have cells array, use it directly (like food)
-    
-    // Check if my largest cell is big enough to eat target's largest cell
-    return myLargestCell.radius > targetLargestCell.radius * 1.1;
-  }
-  
-  // Helper method to calculate if this AI should flee from another entity
-  shouldFleeFrom(entity) {
-    if (!entity) return false;
-    
-    // Get largest cell of this AI
-    const myLargestCell = this.cells.reduce((largest, cell) => 
-      cell.radius > largest.radius ? cell : largest, this.cells[0]);
-    
-    // Get largest cell of target entity
-    const targetLargestCell = entity.cells ? 
-      entity.cells.reduce((largest, cell) => cell.radius > largest.radius ? cell : largest, entity.cells[0]) : 
-      entity; // If entity doesn't have cells array, use it directly (like virus)
-    
-    // Check if target's largest cell is big enough to eat my largest cell
-    return targetLargestCell.radius > myLargestCell.radius * 1.1;
-  }
-  
-  // Helper method to calculate overlap percentage between two cells
-  calculateOverlap(cell1, cell2) {
-    const dx = cell1.x - cell2.x;
-    const dy = cell1.y - cell2.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // If cells don't overlap at all
-    if (distance >= cell1.radius + cell2.radius) {
-      return 0;
-    }
-    
-    // Calculate overlap
-    const overlap = (cell1.radius + cell2.radius - distance) / 2;
-    
-    // Calculate overlap percentage relative to the smaller cell
-    return overlap / Math.min(cell1.radius, cell2.radius);
-  }
-  
-  // Helper method to find the best direction to flee
-  findFleeDirection() {
-    if (!this.targetEntity) return { x: this.x, y: this.y };
-    
-    // Basic direction away from threat
-    const dx = this.x - this.targetEntity.x;
-    const dy = this.y - this.targetEntity.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    if (distance === 0) {
-      // If somehow at the same position, pick a random direction
-      const angle = Math.random() * Math.PI * 2;
-      return {
-        x: this.x + Math.cos(angle) * 300,
-        y: this.y + Math.sin(angle) * 300
-      };
-    }
-    
-    // Normalize direction
-    const dirX = dx / distance;
-    const dirY = dy / distance;
-    
-    // Check if fleeing towards a wall
-    const fleeX = this.x + dirX * 300;
-    const fleeY = this.y + dirY * 300;
-    
-    const margin = 100;
-    const isNearLeftWall = fleeX < margin;
-    const isNearRightWall = fleeX > this.game.worldSize - margin;
-    const isNearTopWall = fleeY < margin;
-    const isNearBottomWall = fleeY > this.game.worldSize - margin;
-    
-    // If fleeing towards a wall, adjust direction
-    if (isNearLeftWall || isNearRightWall || isNearTopWall || isNearBottomWall) {
-      // Try different angles to find a good escape route
-      const angles = [Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, 5*Math.PI/4, 3*Math.PI/2, 7*Math.PI/4];
-      
-      for (const angleOffset of angles) {
-        const newAngle = Math.atan2(dirY, dirX) + angleOffset;
-        const newDirX = Math.cos(newAngle);
-        const newDirY = Math.sin(newAngle);
-        
-        const newFleeX = this.x + newDirX * 300;
-        const newFleeY = this.y + newDirY * 300;
-        
-        // Check if this direction avoids walls
-        if (newFleeX > margin && 
-            newFleeX < this.game.worldSize - margin && 
-            newFleeY > margin && 
-            newFleeY < this.game.worldSize - margin) {
-          return { x: newFleeX, y: newFleeY };
-        }
-      }
-      
-      // If all directions lead to walls, aim for center
-      return {
-        x: this.game.worldSize / 2,
-        y: this.game.worldSize / 2
-      };
-    }
-    
-    // Return the basic flee direction if not near walls
-    return { x: fleeX, y: fleeY };
-  }
-  
-  // Helper method to find the best food to chase
-  findBestFood() {
-    const nearbyEntities = this.game.getEntitiesInRange(
-      this.x, this.y, 
-      200, 
-      ['foods']
-    );
-    
-    if (!nearbyEntities.foods || nearbyEntities.foods.length === 0) {
-      return null;
-    }
-    
-    // Score each food based on distance and value
-    const scoredFoods = nearbyEntities.foods.map(food => {
-      const dx = this.x - food.x;
-      const dy = this.y - food.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      // Skip food ejected by this AI recently
-      if (food.ejectedBy === this.id && Date.now() - food.ejectionTime < 1000) {
-        return { food, score: -1 };
-      }
-      
-      // Calculate score (higher is better)
-      // Value food mass and proximity
-      const score = (food.mass * 10) / (distance + 1);
-      
-      return { food, score };
-    });
-    
-    // Sort by score (highest first) and filter out negative scores
-    const validFoods = scoredFoods.filter(item => item.score > 0);
-    validFoods.sort((a, b) => b.score - a.score);
-    
-    // Return the best food or null if none found
-    return validFoods.length > 0 ? validFoods[0].food : null;
-  }
-  
-  // Helper method to find the safest virus to hide behind
-  findSafeVirus() {
-    if (!this.targetEntity) return null;
-    
-    const nearbyEntities = this.game.getEntitiesInRange(
-      this.x, this.y, 
-      300, 
-      ['viruses']
-    );
-    
-    if (!nearbyEntities.viruses || nearbyEntities.viruses.length === 0) {
-      return null;
-    }
-    
-    // Get my smallest cell
-    const mySmallestCell = this.cells.reduce((smallest, cell) => 
-      cell.radius < smallest.radius ? cell : smallest, this.cells[0]);
-    
-    // Only consider viruses that we can hide behind
-    const safeViruses = nearbyEntities.viruses.filter(virus => 
-      virus.canPassUnder(mySmallestCell.radius)
-    );
-    
-    if (safeViruses.length === 0) return null;
-    
-    // Find virus that's between us and the threat
-    const threatX = this.targetEntity.x;
-    const threatY = this.targetEntity.y;
-    
-    // Score each virus based on position relative to threat
-    const scoredViruses = safeViruses.map(virus => {
-      // Vector from AI to threat
-      const aiToThreatX = threatX - this.x;
-      const aiToThreatY = threatY - this.y;
-      const aiToThreatDist = Math.sqrt(aiToThreatX * aiToThreatX + aiToThreatY * aiToThreatY);
-      
-      // Vector from AI to virus
-      const aiToVirusX = virus.x - this.x;
-      const aiToVirusY = virus.y - this.y;
-      const aiToVirusDist = Math.sqrt(aiToVirusX * aiToVirusX + aiToVirusY * aiToVirusY);
-      
-      // Calculate dot product to see if virus is in direction of threat
-      const dotProduct = (aiToVirusX * aiToThreatX + aiToVirusY * aiToThreatY) / 
-                         (aiToVirusDist * aiToThreatDist);
-      
-      // Higher score for viruses between AI and threat
-      const directionScore = Math.max(0, dotProduct);
-      
-      // Distance factor (prefer closer viruses)
-      const distanceFactor = 1 - Math.min(1, aiToVirusDist / 300);
-      
-      // Final score
-      const score = directionScore * distanceFactor;
-      
-      return { virus, score };
-    });
-    
-    // Sort by score (highest first)
-    scoredViruses.sort((a, b) => b.score - a.score);
-    
-    // Return the best virus or null if none found
-    return scoredViruses.length > 0 ? scoredViruses[0].virus : null;
   }
 }

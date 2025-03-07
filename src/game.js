@@ -102,6 +102,30 @@ export class Game {
       powerUps: [],
       ais: []
     };
+    
+    // Game balance settings
+    this.balanceSettings = {
+      // AI settings
+      aiBaseSpeed: 4.5,
+      aiAggressionMultiplier: 1.2,
+      
+      // Player settings
+      playerBaseSpeed: 6.5,
+      playerSplitVelocity: 18,
+      playerEjectSpeed: 35,
+      
+      // Food settings
+      foodValue: 1.0,
+      foodSpawnRate: 1.0,
+      
+      // Virus settings
+      virusSpawnRate: 1.0,
+      virusSplitForce: 1.0,
+      
+      // Power-up settings
+      powerUpSpawnRate: 1.0,
+      powerUpDuration: 1.0
+    };
   }
   
   setPlayer(player) {
@@ -158,6 +182,10 @@ export class Game {
         this.getRandomColor(),
         this
       );
+      
+      // Apply balance settings
+      ai.baseSpeed = this.balanceSettings.aiBaseSpeed;
+      ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
       
       // Assign team in team mode
       if (this.gameMode === 'teams') {
@@ -314,6 +342,10 @@ export class Game {
           this
         );
         
+        // Apply balance settings
+        ai.baseSpeed = this.balanceSettings.aiBaseSpeed;
+        ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
+        
         // Assign team in team mode
         if (this.gameMode === 'teams') {
           const teamNames = Object.keys(this.teams);
@@ -326,7 +358,6 @@ export class Game {
         this.ais.push(ai);
       }
     }
-    
     // Replenish food in batches for better performance
     const now = Date.now();
     if (now - this.lastFoodGenerationTime > this.foodGenerationInterval) {
@@ -526,6 +557,7 @@ export class Game {
     
     return result;
   }
+  
   updateVisibleEntities() {
     // Calculate viewport bounds with some margin
     const viewportLeft = this.camera.x - this.width / (2 * this.camera.scale) - 100;
@@ -620,7 +652,6 @@ export class Game {
       }
     });
   }
-  
   render() {
     // Clear canvas
     this.ctx.clearRect(0, 0, this.width, this.height);
@@ -923,7 +954,6 @@ export class Game {
     this.ctx.lineWidth = 5;
     this.ctx.strokeRect(0, 0, this.worldSize, this.worldSize);
   }
-  
   drawSafeZone() {
     // Draw safe zone border
     this.ctx.beginPath();
@@ -1220,5 +1250,24 @@ export class Game {
         this.particles.createTextEffect(x, y, options.text || '', options.color || 'white');
         break;
     }
+  }
+  
+  // Apply game balance settings
+  applyBalanceSettings(settings) {
+    // Update balance settings
+    this.balanceSettings = { ...this.balanceSettings, ...settings };
+    
+    // Apply to player if exists
+    if (this.player) {
+      this.player.baseSpeed = this.balanceSettings.playerBaseSpeed;
+      this.player.splitVelocity = this.balanceSettings.playerSplitVelocity;
+      this.player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
+    }
+    
+    // Apply to AIs
+    this.ais.forEach(ai => {
+      ai.baseSpeed = this.balanceSettings.aiBaseSpeed;
+      ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
+    });
   }
 }

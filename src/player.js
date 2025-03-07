@@ -10,7 +10,7 @@ export class Player {
     this.y = Math.random() * game.worldSize;
     this.targetX = this.x;
     this.targetY = this.y;
-    this.baseSpeed = 5;
+    this.baseSpeed = 6.5; // Increased base speed for better player experience
     this.speed = this.baseSpeed;
     
     // Movement smoothing
@@ -29,10 +29,14 @@ export class Player {
     // Ejection settings
     this.ejectCooldown = 0;
     this.ejectCooldownTime = 250;
-    this.ejectSize = 4;
-    this.ejectSpeed = 25;
-    this.ejectDeceleration = 0.95;
-    this.ejectDistance = 2;
+    this.ejectSize = 5; // Slightly larger ejected mass
+    this.ejectSpeed = 35; // Increased ejection speed
+    this.ejectDeceleration = 0.97; // Slower deceleration for longer travel
+    this.ejectDistance = 2.5; // Increased ejection distance
+    this.ejectMassAmount = 0.06; // Increased from 0.05 to 0.06
+    
+    // Split settings
+    this.splitVelocity = 18; // Reduced from 25 for shorter split distance
     
     // State
     this.isDead = false;
@@ -58,7 +62,6 @@ export class Player {
     // Special abilities
     this.canSplit = true;
     this.splitCooldown = 10000;
-    this.splitVelocity = 25;
     this.powerUps = {
       speedBoost: { active: false, duration: 0, factor: 1.5 },
       shield: { active: false, duration: 0 },
@@ -241,15 +244,18 @@ export class Player {
   }
 
   updateSpeedBasedOnSize() {
+    // Calculate average cell radius
     const avgRadius = this.cells.reduce((sum, cell) => sum + cell.radius, 0) / this.cells.length;
-    const speedFactor = Math.max(0.5, Math.min(1.5, Math.pow(this.baseRadius / avgRadius, 0.4)));
+    
+    // Speed decreases as size increases, but less punishing than before
+    // Smaller cells move faster, very large cells move slower
+    const speedFactor = Math.max(0.5, Math.min(1.3, Math.pow(this.baseRadius / avgRadius, 0.3)));
     this.speed = this.baseSpeed * speedFactor;
     
     if (this.powerUps.speedBoost.active) {
       this.speed *= this.powerUps.speedBoost.factor;
     }
   }
-
   moveTowardsTarget(deltaTime) {
     // Calculate movement for each cell
     this.cells.forEach(cell => {
@@ -259,7 +265,7 @@ export class Player {
       
       if (distance > 0) {
         // Calculate speed based on cell size
-        const sizeSpeedFactor = Math.max(0.5, Math.min(2, 40 / cell.radius));
+        const sizeSpeedFactor = Math.max(0.6, Math.min(2, 40 / cell.radius));
         const moveSpeed = this.speed * sizeSpeedFactor;
         
         // Apply smoothing for more fluid movement
@@ -549,7 +555,7 @@ export class Player {
       // Apply velocity for split cells
       if (cell.velocityX !== undefined && cell.velocityY !== undefined) {
         const elapsed = Date.now() - cell.splitTime;
-        const slowdownFactor = Math.max(0, 1 - elapsed / 1000); // Slow down over 1 second
+        const slowdownFactor = Math.max(0, 1 - elapsed / 800); // Faster slowdown (800ms instead of 1000ms)
         
         cell.x += cell.velocityX * slowdownFactor;
         cell.y += cell.velocityY * slowdownFactor;
@@ -806,7 +812,6 @@ export class Player {
     
     this.game.showAnnouncement(`${type} activated!`, 2000);
   }
-  
   applyMagnetEffect() {
     const nearbyFoods = this.game.getEntitiesInRange(
       this.x, this.y, 
@@ -912,7 +917,7 @@ export class Player {
       y: cell.y + dirY * offsetDistance,
       radius: cell.radius,
       mass: newMass,
-      velocityX: dirX * this.splitVelocity,
+      velocityX: dirX * this.splitVelocity, // Using reduced splitVelocity for shorter distance
       velocityY: dirY * this.splitVelocity,
       splitTime: Date.now(),
       membrane: {
@@ -965,8 +970,8 @@ export class Player {
         const dirX = distance > 0 ? dx / distance : 1;
         const dirY = distance > 0 ? dy / distance : 0;
         
-        // Calculate ejected mass (smaller amount for better gameplay)
-        const ejectedMass = Math.min(cell.mass * 0.05, 20);
+        // Calculate ejected mass (increased amount for better gameplay)
+        const ejectedMass = Math.min(cell.mass * this.ejectMassAmount, 25); // Increased max mass
         
         // Only eject if it won't make the cell too small
         if (cell.mass - ejectedMass > this.baseRadius) {
@@ -980,7 +985,7 @@ export class Player {
           
           // Add random variation to ejection
           const angleVariation = (Math.random() - 0.5) * 0.2; // ±0.1 radians (about ±5.7 degrees)
-          const speedVariation = 0.8 + Math.random() * 0.4; // 0.8 to 1.2 times base speed
+          const speedVariation = 0.9 + Math.random() * 0.2; // 0.9 to 1.1 times base speed
           
           const angle = Math.atan2(dirY, dirX) + angleVariation;
           const finalDirX = Math.cos(angle);
@@ -1050,7 +1055,6 @@ export class Player {
       this.game.soundManager.playSound('eject');
     }
   }
-  
   takeDamage(amount) {
     // No damage if shield is active
     if (this.powerUps.shield.active) return;
@@ -1127,6 +1131,7 @@ export class Player {
       });
     }
   }
+  
   draw(ctx) {
     // Sort cells by z-index to handle layering
     const sortedCells = [...this.cells].sort((a, b) => a.z - b.z);
@@ -1531,58 +1536,6 @@ export class Player {
       
       offsetX += iconSize + padding;
     });
-  }
-  
-  // Helper method to calculate if this player can eat another entity
-  canEat(entity) {
-    if (!entity) return false;
-    
-    // Get largest cell of this player
-    const myLargestCell = this.cells.reduce((largest, cell) => 
-      cell.radius > largest.radius ? cell : largest, this.cells[0]);
-    
-    // Get largest cell of target entity
-    const targetLargestCell = entity.cells ? 
-      entity.cells.reduce((largest, cell) => cell.radius > largest.radius ? cell : largest, entity.cells[0]) : 
-      entity; // If entity doesn't have cells array, use it directly (like food)
-    
-    // Check if my largest cell is big enough to eat target's largest cell
-    return myLargestCell.radius > targetLargestCell.radius * 1.1;
-  }
-  
-  // Helper method to calculate if this player should flee from another entity
-  shouldFleeFrom(entity) {
-    if (!entity) return false;
-    
-    // Get largest cell of this player
-    const myLargestCell = this.cells.reduce((largest, cell) => 
-      cell.radius > largest.radius ? cell : largest, this.cells[0]);
-    
-    // Get largest cell of target entity
-    const targetLargestCell = entity.cells ? 
-      entity.cells.reduce((largest, cell) => cell.radius > largest.radius ? cell : largest, entity.cells[0]) : 
-      entity; // If entity doesn't have cells array, use it directly (like virus)
-    
-    // Check if target's largest cell is big enough to eat my largest cell
-    return targetLargestCell.radius > myLargestCell.radius * 1.1;
-  }
-  
-  // Helper method to calculate overlap percentage between two cells
-  calculateOverlap(cell1, cell2) {
-    const dx = cell1.x - cell2.x;
-    const dy = cell1.y - cell2.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // If cells don't overlap at all
-    if (distance >= cell1.radius + cell2.radius) {
-      return 0;
-    }
-    
-    // Calculate overlap
-    const overlap = (cell1.radius + cell2.radius - distance) / 2;
-    
-    // Calculate overlap percentage relative to the smaller cell
-    return overlap / Math.min(cell1.radius, cell2.radius);
   }
   
   // Get player stats for display
