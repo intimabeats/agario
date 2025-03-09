@@ -354,74 +354,72 @@ export class Game {
     });
   }
   
-// Correção do arquivo game.js - Função setPlayer
-setPlayer(player) {
-  this.player = player;
-  
-  // Certifique-se de que a posição inicial do jogador é válida
-  player.x = this.worldSize / 2; // Iniciar no centro do mapa
-  player.y = this.worldSize / 2; // Iniciar no centro do mapa
-  player.targetX = player.x;
-  player.targetY = player.y;
-  
-  // Inicialize as células do jogador com a posição correta
-  if (player.cells.length > 0) {
-    player.cells[0].x = player.x;
-    player.cells[0].y = player.y;
-    player.cells[0].velocityX = 0;
-    player.cells[0].velocityY = 0;
-  } else {
-    // Criar uma célula se não existir
-    player.cells.push({
-      x: player.x,
-      y: player.y,
-      radius: player.baseRadius,
-      mass: Math.PI * player.baseRadius * player.baseRadius,
-      velocityX: 0,
-      velocityY: 0,
-      membrane: {
-        points: 20,
-        elasticity: 0.3,
-        distortion: 0.15,
-        oscillation: 0.05,
-        oscillationSpeed: 1.5,
-        phase: Math.random() * Math.PI * 2,
-        vertices: []
-      },
-      z: 0,
-      id: 'cell-' + Date.now() + '-0',
-      effects: []
-    });
+  setPlayer(player) {
+    this.player = player;
     
-    // Inicializar a membrana da célula
-    player.initCellMembranes();
+    // Ensure player's initial position is valid
+    player.x = this.worldSize / 2; // Start at center of map
+    player.y = this.worldSize / 2; // Start at center of map
+    player.targetX = player.x;
+    player.targetY = player.y;
+    
+    // Initialize player's cells with correct position
+    if (player.cells.length > 0) {
+      player.cells[0].x = player.x;
+      player.cells[0].y = player.y;
+      player.cells[0].velocityX = 0;
+      player.cells[0].velocityY = 0;
+    } else {
+      // Create a cell if none exists
+      player.cells.push({
+        x: player.x,
+        y: player.y,
+        radius: player.baseRadius,
+        mass: Math.PI * player.baseRadius * player.baseRadius,
+        velocityX: 0,
+        velocityY: 0,
+        membrane: {
+          points: 20,
+          elasticity: 0.3,
+          distortion: 0.15,
+          oscillation: 0.05,
+          oscillationSpeed: 1.5,
+          phase: Math.random() * Math.PI * 2,
+          vertices: []
+        },
+        z: 0,
+        id: 'cell-' + Date.now() + '-0',
+        effects: []
+      });
+      
+      // Initialize the cell membrane
+      player.initCellMembranes();
+    }
+    
+    // Center camera on player
+    this.centerCamera();
+    
+    // Add player to team in team mode
+    if (this.gameMode === 'teams') {
+      const teamNames = Object.keys(this.teams);
+      const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
+      this.teams[teamName].players.push(player);
+      player.team = teamName;
+      player.color = this.getTeamColor(teamName);
+    }
+    
+    // Apply balance settings to player
+    player.baseSpeed = this.balanceSettings.playerBaseSpeed;
+    player.splitVelocity = this.balanceSettings.playerSplitVelocity;
+    player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
+    player.growthRate = this.balanceSettings.playerGrowthRate;
+    player.shrinkRate = this.balanceSettings.playerShrinkRate;
+    
+    // Initialize player achievements
+    this.achievements.initPlayer(player);
+    
+    console.log("Player set in game:", player.x, player.y, "Target:", player.targetX, player.targetY);
   }
-  
-  // Centralize a câmera no jogador
-  this.centerCamera();
-  
-  // Add player to team in team mode
-  if (this.gameMode === 'teams') {
-    const teamNames = Object.keys(this.teams);
-    const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
-    this.teams[teamName].players.push(player);
-    player.team = teamName;
-    player.color = this.getTeamColor(teamName);
-  }
-  
-  // Apply balance settings to player
-  player.baseSpeed = this.balanceSettings.playerBaseSpeed;
-  player.splitVelocity = this.balanceSettings.playerSplitVelocity;
-  player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
-  player.growthRate = this.balanceSettings.playerGrowthRate;
-  player.shrinkRate = this.balanceSettings.playerShrinkRate;
-  
-  // Initialize player achievements
-  this.achievements.initPlayer(player);
-  
-  console.log("Player set in game:", player.x, player.y, "Target:", player.targetX, player.targetY);
-}
-
   
   getTeamColor(teamName) {
     return this.teams[teamName]?.color || '#ffffff';
@@ -472,7 +470,6 @@ setPlayer(player) {
     });
     this.canvas.dispatchEvent(event);
   }
-  
   saveGameStats() {
     if (!this.player) return;
     
@@ -558,51 +555,53 @@ setPlayer(player) {
   }
   
   gameLoop(timestamp) {
-  // Calculate delta time
-  if (!timestamp) timestamp = performance.now();
-  const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
-  this.lastFrameTime = timestamp;
-  
-  // Cap delta time to prevent large jumps
-  const cappedDeltaTime = Math.min(deltaTime, 0.1);
-  
-  // Update game time
-  this.gameTime += cappedDeltaTime;
-  
-  // Update FPS counter
-  this.frameCount++;
-  if (timestamp - this.fpsUpdateTime > 1000) {
-    this.fps = this.frameCount;
-    this.frameCount = 0;
-    this.fpsUpdateTime = timestamp;
+    // Calculate delta time
+    if (!timestamp) timestamp = performance.now();
+    const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
+    this.lastFrameTime = timestamp;
     
-    // Debug log
-    console.log("FPS:", this.fps, "Player position:", this.player?.x, this.player?.y);
+    // Cap delta time to prevent large jumps
+    const cappedDeltaTime = Math.min(deltaTime, 0.1);
+    
+    // Update game time
+    this.gameTime += cappedDeltaTime;
+    
+    // Update FPS counter
+    this.frameCount++;
+    if (timestamp - this.fpsUpdateTime > 1000) {
+      this.fps = this.frameCount;
+      this.frameCount = 0;
+      this.fpsUpdateTime = timestamp;
+      
+      // Debug log
+      if (this.debugMode) {
+        console.log("FPS:", this.fps, "Player position:", this.player?.x, this.player?.y);
+      }
+    }
+    
+    // Skip update if paused
+    if (this.isPaused) {
+      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
+      return;
+    }
+    
+    // Fixed time step for physics
+    this.accumulator += cappedDeltaTime;
+    while (this.accumulator >= 1 / this.targetFPS) {
+      this.update(1 / this.targetFPS);
+      this.accumulator -= 1 / this.targetFPS;
+    }
+    
+    // Render at display refresh rate
+    this.render();
+    
+    // Process removal queues
+    this.processRemovalQueues();
+    
+    if (!this.isGameOver) {
+      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
+    }
   }
-  
-  // Skip update if paused
-  if (this.isPaused) {
-    this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
-    return;
-  }
-  
-  // Fixed time step for physics
-  this.accumulator += cappedDeltaTime;
-  while (this.accumulator >= 1 / this.targetFPS) {
-    this.update(1 / this.targetFPS);
-    this.accumulator -= 1 / this.targetFPS;
-  }
-  
-  // Render at display refresh rate
-  this.render();
-  
-  // Process removal queues
-  this.processRemovalQueues();
-  
-  if (!this.isGameOver) {
-    this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
-  }
-}
   
   update(deltaTime) {
     // Scale delta time by time scale (for slow-motion effects)
@@ -877,7 +876,7 @@ setPlayer(player) {
     
     // Remove power-ups
     if (this.removalQueues.powerUps.length > 0) {
-            this.powerUps = this.powerUps.filter(powerUp => !this.removalQueues.powerUps.includes(powerUp));
+      this.powerUps = this.powerUps.filter(powerUp => !this.removalQueues.powerUps.includes(powerUp));
       this.removalQueues.powerUps = [];
     }
     
@@ -991,7 +990,6 @@ setPlayer(player) {
       this.handleGameOver();
     }, 5000);
   }
-  
   updateTeamScores() {
     // Reset team scores
     Object.keys(this.teams).forEach(team => {
@@ -1155,56 +1153,55 @@ setPlayer(player) {
     return result;
   }
   
-updateVisibleEntities() {
-  // Calculate viewport bounds
-  const viewportBounds = this.getViewportBounds();
-  
-  // Update visible entities
-  this.visibleEntities.foods = this.foods.filter(food => {
-    // Check if food has checkVisibility method, otherwise use isInViewport
-    if (typeof food.checkVisibility === 'function') {
-      return food.checkVisibility(viewportBounds);
-    } else {
-      return this.isInViewport(food.x, food.y, food.radius, viewportBounds);
-    }
-  });
-  
-  this.visibleEntities.viruses = this.viruses.filter(virus => {
-    if (typeof virus.checkVisibility === 'function') {
-      return virus.checkVisibility(viewportBounds);
-    } else {
-      return this.isInViewport(virus.x, virus.y, virus.radius, viewportBounds);
-    }
-  });
-  
-  this.visibleEntities.powerUps = this.powerUps.filter(powerUp => {
-    if (typeof powerUp.checkVisibility === 'function') {
-      return powerUp.checkVisibility(viewportBounds);
-    } else {
-      return this.isInViewport(powerUp.x, powerUp.y, powerUp.radius, viewportBounds);
-    }
-  });
-  
-  // Update visible AIs
-  this.visibleEntities.ais = [];
-  this.ais.forEach(ai => {
-    if (!ai.isDead) {
-      let isVisible = false;
-      
-      // Check if any cell is visible
-      ai.cells.forEach(cell => {
-        if (this.isInViewport(cell.x, cell.y, cell.radius, viewportBounds)) {
-          isVisible = true;
-        }
-      });
-      
-      if (isVisible) {
-        this.visibleEntities.ais.push(ai);
+  updateVisibleEntities() {
+    // Calculate viewport bounds
+    const viewportBounds = this.getViewportBounds();
+    
+    // Update visible entities
+    this.visibleEntities.foods = this.foods.filter(food => {
+      // Check if food has checkVisibility method, otherwise use isInViewport
+      if (typeof food.checkVisibility === 'function') {
+        return food.checkVisibility(viewportBounds);
+      } else {
+        return this.isInViewport(food.x, food.y, food.radius, viewportBounds);
       }
-    }
-  });
-}
-
+    });
+    
+    this.visibleEntities.viruses = this.viruses.filter(virus => {
+      if (typeof virus.checkVisibility === 'function') {
+        return virus.checkVisibility(viewportBounds);
+      } else {
+        return this.isInViewport(virus.x, virus.y, virus.radius, viewportBounds);
+      }
+    });
+    
+    this.visibleEntities.powerUps = this.powerUps.filter(powerUp => {
+      if (typeof powerUp.checkVisibility === 'function') {
+        return powerUp.checkVisibility(viewportBounds);
+      } else {
+        return this.isInViewport(powerUp.x, powerUp.y, powerUp.radius, viewportBounds);
+      }
+    });
+    
+    // Update visible AIs
+    this.visibleEntities.ais = [];
+    this.ais.forEach(ai => {
+      if (!ai.isDead) {
+        let isVisible = false;
+        
+        // Check if any cell is visible
+        ai.cells.forEach(cell => {
+          if (this.isInViewport(cell.x, cell.y, cell.radius, viewportBounds)) {
+            isVisible = true;
+          }
+        });
+        
+        if (isVisible) {
+          this.visibleEntities.ais.push(ai);
+        }
+      }
+    });
+  }
   
   getViewportBounds() {
     const halfWidth = this.width / (2 * this.camera.scale);
@@ -1229,85 +1226,85 @@ updateVisibleEntities() {
     );
   }
   
-centerCamera() {
-  if (!this.player) return;
-  
-  // Verificar se as coordenadas do jogador são válidas
-  if (isNaN(this.player.x) || isNaN(this.player.y)) {
-    console.error("Invalid player coordinates for camera centering:", this.player.x, this.player.y);
-    return;
-  }
-  
-  // Calculate target camera position (center of mass of player cells)
-  let totalX = 0;
-  let totalY = 0;
-  let totalMass = 0;
-  let validCells = 0;
-  
-  this.player.cells.forEach(cell => {
-    // Verificar se as coordenadas e massa da célula são válidas
-    if (isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
+  centerCamera() {
+    if (!this.player) return;
+    
+    // Verify player coordinates are valid
+    if (isNaN(this.player.x) || isNaN(this.player.y)) {
+      console.error("Invalid player coordinates for camera centering:", this.player.x, this.player.y);
       return;
     }
     
-    totalX += cell.x * cell.mass;
-    totalY += cell.y * cell.mass;
-    totalMass += cell.mass;
-    validCells++;
-  });
-  
-  // Se não houver células válidas, use a posição do jogador
-  if (validCells === 0 || totalMass <= 0) {
-    this.camera.x = this.player.x;
-    this.camera.y = this.player.y;
-  } else {
-    const targetX = totalX / totalMass;
-    const targetY = totalY / totalMass;
+    // Calculate target camera position (center of mass of player cells)
+    let totalX = 0;
+    let totalY = 0;
+    let totalMass = 0;
+    let validCells = 0;
     
-    // Verificar se as coordenadas calculadas são válidas
-    if (isNaN(targetX) || isNaN(targetY)) {
-      console.error("Invalid camera target calculated:", totalX, totalY, totalMass);
-      return;
-    }
+    this.player.cells.forEach(cell => {
+      // Verify cell coordinates and mass are valid
+      if (isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
+        return;
+      }
+      
+      totalX += cell.x * cell.mass;
+      totalY += cell.y * cell.mass;
+      totalMass += cell.mass;
+      validCells++;
+    });
     
-    // Smooth camera movement
-    if (isNaN(this.camera.x) || isNaN(this.camera.y)) {
-      this.camera.x = targetX;
-      this.camera.y = targetY;
+    // If no valid cells, use player position
+    if (validCells === 0 || totalMass <= 0) {
+      this.camera.x = this.player.x;
+      this.camera.y = this.player.y;
     } else {
-      this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
-      this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
+      const targetX = totalX / totalMass;
+      const targetY = totalY / totalMass;
+      
+      // Verify calculated coordinates are valid
+      if (isNaN(targetX) || isNaN(targetY)) {
+        console.error("Invalid camera target calculated:", totalX, totalY, totalMass);
+        return;
+      }
+      
+      // Smooth camera movement
+      if (isNaN(this.camera.x) || isNaN(this.camera.y)) {
+        this.camera.x = targetX;
+        this.camera.y = targetY;
+      } else {
+        this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
+        this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
+      }
+    }
+    
+    // Calculate camera scale based on player size
+    if (this.player.cells.length > 0) {
+      const largestCell = this.player.cells.reduce((largest, cell) => 
+        cell.radius > largest.radius ? cell : largest, this.player.cells[0]);
+      
+      // Scale inversely with player size, but with limits
+      const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestCell.radius));
+      
+      // Smooth scale transition
+      if (isNaN(this.camera.scale)) {
+        this.camera.scale = targetScale;
+      } else {
+        this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
+      }
+    }
+    
+    // Keep camera within world bounds
+    this.camera.x = Math.max(this.cameraBounds.minX, Math.min(this.cameraBounds.maxX, this.camera.x));
+    this.camera.y = Math.max(this.cameraBounds.minY, Math.min(this.cameraBounds.maxY, this.camera.y));
+    
+    // Verify final camera values are valid
+    if (isNaN(this.camera.x) || isNaN(this.camera.y) || isNaN(this.camera.scale)) {
+      console.error("Invalid camera values after centering:", this.camera.x, this.camera.y, this.camera.scale);
+      this.camera.x = this.worldSize / 2;
+      this.camera.y = this.worldSize / 2;
+      this.camera.scale = 1.0;
     }
   }
-  
-  // Calculate camera scale based on player size
-  if (this.player.cells.length > 0) {
-    const largestCell = this.player.cells.reduce((largest, cell) => 
-      cell.radius > largest.radius ? cell : largest, this.player.cells[0]);
-    
-    // Scale inversely with player size, but with limits
-    const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestCell.radius));
-    
-    // Smooth scale transition
-    if (isNaN(this.camera.scale)) {
-      this.camera.scale = targetScale;
-    } else {
-      this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
-    }
-  }
-  
-  // Keep camera within world bounds
-  this.camera.x = Math.max(this.cameraBounds.minX, Math.min(this.cameraBounds.maxX, this.camera.x));
-  this.camera.y = Math.max(this.cameraBounds.minY, Math.min(this.cameraBounds.maxY, this.camera.y));
-  
-  // Verificar se as coordenadas finais da câmera são válidas
-  if (isNaN(this.camera.x) || isNaN(this.camera.y) || isNaN(this.camera.scale)) {
-    console.error("Invalid camera values after centering:", this.camera.x, this.camera.y, this.camera.scale);
-    this.camera.x = this.worldSize / 2;
-    this.camera.y = this.worldSize / 2;
-    this.camera.scale = 1.0;
-  }
-}
   
   render() {
     // Performance measurement
@@ -1469,7 +1466,6 @@ centerCamera() {
       this.stats.entitiesRendered++;
     });
   }
-  
   drawUI() {
     // Draw minimap
     this.miniMap.update(1/60); // Update with fixed time step
@@ -1553,6 +1549,14 @@ centerCamera() {
     if (this.animationId) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
+    }
+    
+    // Save game stats
+    this.saveGameStats();
+    
+    // Update leaderboard
+    if (this.player) {
+      this.leaderboard.submitScore(this.player.name, Math.floor(this.player.score));
     }
   }
   
@@ -1691,6 +1695,280 @@ centerCamera() {
     
     if (gameUIElement) {
       gameUIElement.style.display = 'block';
+    }
+    
+    // Reset animation frame
+    this.lastFrameTime = performance.now();
+    this.animationId = null;
+  }
+  
+  // Additional utility methods
+  
+  /**
+   * Checks if two entities are colliding
+   * @param {Object} entity1 - First entity with x, y, radius properties
+   * @param {Object} entity2 - Second entity with x, y, radius properties
+   * @returns {boolean} - True if entities are colliding
+   */
+  checkCollision(entity1, entity2) {
+    const dx = entity1.x - entity2.x;
+    const dy = entity1.y - entity2.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    return distance < entity1.radius + entity2.radius;
+  }
+  
+  /**
+   * Calculates distance between two points
+   * @param {number} x1 - First point x coordinate
+   * @param {number} y1 - First point y coordinate
+   * @param {number} x2 - Second point x coordinate
+   * @param {number} y2 - Second point y coordinate
+   * @returns {number} - Distance between points
+   */
+  getDistance(x1, y1, x2, y2) {
+    const dx = x1 - x2;
+    const dy = y1 - y2;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  
+  /**
+   * Formats a number with commas for thousands
+   * @param {number} num - Number to format
+   * @returns {string} - Formatted number
+   */
+  formatNumber(num) {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  }
+  
+  /**
+   * Formats time in seconds to MM:SS format
+   * @param {number} seconds - Time in seconds
+   * @returns {string} - Formatted time
+   */
+  formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${minutes}:${secs.toString().padStart(2, '0')}`;
+  }
+  
+  /**
+   * Generates a random name for AI players
+   * @returns {string} - Random name
+   */
+  generateRandomName() {
+    const prefixes = ['Micro', 'Mega', 'Ultra', 'Super', 'Hyper', 'Nano', 'Giga', 'Quantum', 'Cosmic', 'Atomic'];
+    const suffixes = ['Cell', 'Blob', 'Sphere', 'Orb', 'Dot', 'Bubble', 'Nucleus', 'Plasma', 'Matter', 'Entity'];
+    
+    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+    const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+    
+    return `${prefix}${suffix}`;
+  }
+  
+  /**
+   * Generates a random color in hex format
+   * @returns {string} - Random color in hex format
+   */
+  generateRandomColor() {
+    const letters = '0123456789ABCDEF';
+    let color = '#';
+    for (let i = 0; i < 6; i++) {
+      color += letters[Math.floor(Math.random() * 16)];
+    }
+    return color;
+  }
+  
+  /**
+   * Interpolates between two colors
+   * @param {string} color1 - First color in hex format
+   * @param {string} color2 - Second color in hex format
+   * @param {number} factor - Interpolation factor (0-1)
+   * @returns {string} - Interpolated color in hex format
+   */
+  lerpColor(color1, color2, factor) {
+    // Convert hex to RGB
+    const hex2rgb = (hex) => {
+      const r = parseInt(hex.substring(1, 3), 16);
+      const g = parseInt(hex.substring(3, 5), 16);
+      const b = parseInt(hex.substring(5, 7), 16);
+      return [r, g, b];
+    };
+    
+    // Convert RGB to hex
+    const rgb2hex = (r, g, b) => {
+      return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
+    };
+    
+    // If colors are not hex format, return color1
+    if (!color1.startsWith('#') || !color2.startsWith('#')) {
+      return color1;
+    }
+    
+    const rgb1 = hex2rgb(color1);
+    const rgb2 = hex2rgb(color2);
+    
+    // Interpolate between the colors
+    const r = Math.round(rgb1[0] + factor * (rgb2[0] - rgb1[0]));
+    const g = Math.round(rgb1[1] + factor * (rgb2[1] - rgb1[1]));
+    const b = Math.round(rgb1[2] + factor * (rgb2[2] - rgb1[2]));
+    
+    return rgb2hex(r, g, b);
+  }
+  
+  /**
+   * Applies easing to a value
+   * @param {number} t - Input value (0-1)
+   * @param {string} type - Easing type ('easeIn', 'easeOut', 'easeInOut')
+   * @returns {number} - Eased value
+   */
+  applyEasing(t, type = 'easeInOut') {
+    switch (type) {
+      case 'easeIn':
+        return t * t;
+      case 'easeOut':
+        return t * (2 - t);
+      case 'easeInOut':
+        return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+      default:
+        return t;
+    }
+  }
+  
+  /**
+   * Clamps a value between min and max
+   * @param {number} value - Value to clamp
+   * @param {number} min - Minimum value
+   * @param {number} max - Maximum value
+   * @returns {number} - Clamped value
+   */
+  clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+  
+  /**
+   * Checks if the game is running on a mobile device
+   * @returns {boolean} - True if on mobile device
+   */
+  isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  }
+  
+  /**
+   * Toggles fullscreen mode
+   */
+  toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      if (this.canvas.requestFullscreen) {
+        this.canvas.requestFullscreen();
+      } else if (this.canvas.webkitRequestFullscreen) {
+        this.canvas.webkitRequestFullscreen();
+      } else if (this.canvas.msRequestFullscreen) {
+        this.canvas.msRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      } else if (document.msExitFullscreen) {
+        document.msExitFullscreen();
+      }
+    }
+  }
+  
+  /**
+   * Toggles debug mode
+   */
+  toggleDebugMode() {
+    this.debugMode = !this.debugMode;
+    console.log(`Debug mode: ${this.debugMode ? 'enabled' : 'disabled'}`);
+  }
+  
+  /**
+   * Toggles pause state
+   */
+  togglePause() {
+    this.isPaused = !this.isPaused;
+    
+    const pauseMenu = document.getElementById('pause-menu');
+    if (pauseMenu) {
+      pauseMenu.style.display = this.isPaused ? 'block' : 'none';
+    }
+    
+    if (this.isPaused) {
+      // Pause background music
+      if (this.soundManager && this.soundManager.musicEnabled) {
+        this.soundManager.pauseBackgroundMusic();
+      }
+    } else {
+      // Resume background music
+      if (this.soundManager && this.soundManager.musicEnabled) {
+        this.soundManager.resumeBackgroundMusic();
+      }
+    }
+  }
+  
+  /**
+   * Handles window resize event
+   */
+  handleResize() {
+    this.updateViewport();
+    
+    // Update UI elements position if needed
+    const gameUI = document.getElementById('game-ui');
+    if (gameUI) {
+      // Adjust UI layout based on screen size
+      if (window.innerWidth < 768) {
+        // Mobile layout
+        gameUI.classList.add('mobile-layout');
+      } else {
+        // Desktop layout
+        gameUI.classList.remove('mobile-layout');
+      }
+    }
+  }
+  
+  /**
+   * Handles visibility change event
+   */
+  handleVisibilityChange() {
+    if (document.hidden && !this.isGameOver) {
+      this.isPaused = true;
+      
+      const pauseMenu = document.getElementById('pause-menu');
+      if (pauseMenu) {
+        pauseMenu.style.display = 'block';
+      }
+      
+      // Pause background music
+      if (this.soundManager && this.soundManager.musicEnabled) {
+        this.soundManager.pauseBackgroundMusic();
+      }
+    }
+  }
+  
+  /**
+   * Handles keyboard events
+   * @param {KeyboardEvent} event - Keyboard event
+   */
+  handleKeyDown(event) {
+    if (this.isGameOver) return;
+    
+    switch (event.key) {
+      case 'p':
+      case 'P':
+      case 'Escape':
+        this.togglePause();
+        break;
+      case 'f':
+      case 'F':
+        this.toggleFullscreen();
+        break;
+      case 'd':
+      case 'D':
+        this.toggleDebugMode();
+        break;
     }
   }
 }

@@ -1416,3 +1416,919 @@ applyFreezeEffect() {
     });
   }
 }
+updateEffects(deltaTime) {
+  // Update global effects
+  this.effects = this.effects.filter(effect => {
+    const elapsed = Date.now() - effect.startTime;
+    return elapsed < effect.duration;
+  });
+}
+
+addExperience(amount) {
+  // Apply experience multiplier from game balance settings
+  const expMultiplier = this.game.balanceSettings.expMultiplier || 1;
+  const adjustedAmount = amount * expMultiplier;
+  
+  // Add experience
+  this.experience += adjustedAmount;
+  
+  // Check for level up
+  this.checkLevelUp();
+  
+  // Create experience particles
+  if (this.game.particles && amount > 10) {
+    this.game.particles.createTextEffect(this.x, this.y - this.radius - 20, `+${Math.floor(adjustedAmount)} XP`, '#4caf50');
+  }
+  
+  return adjustedAmount;
+}
+
+checkLevelUp() {
+  // Check if player has enough experience to level up
+  while (this.experience >= this.experienceToNextLevel) {
+    // Level up
+    this.level++;
+    
+    // Update stats
+    if (this.level > this.stats.highestLevel) {
+      this.stats.highestLevel = this.level;
+    }
+    
+    // Calculate experience for next level (increasing requirement)
+    this.experience -= this.experienceToNextLevel;
+    this.experienceToNextLevel = Math.floor(1000 * Math.pow(1.2, this.level - 1));
+    
+    // Apply level bonuses
+    this.applyLevelBonus(this.level);
+    
+    // Create level up effect
+    if (this.game.particles) {
+      this.game.particles.createParticle({
+        x: this.x,
+        y: this.y,
+        size: this.radius * 2,
+        color: 'rgba(76, 175, 80, 0.3)',
+        life: 1.0,
+        maxLife: 1.0,
+        shape: 'glow'
+      });
+      
+      // Create text effect
+      this.game.particles.createTextEffect(this.x, this.y, `Level Up! ${this.level}`, '#4caf50', 24);
+    }
+    
+    // Play level up sound
+    if (this.game.soundManager) {
+      this.game.soundManager.playSound('levelUp');
+    }
+    
+    // Show announcement
+    this.game.showAnnouncement(`Level Up! ${this.level}`, 2000);
+    
+    // Add notification
+    this.addNotification(`Level Up! ${this.level}`, '#4caf50');
+    
+    // Check for level-based achievements
+    if (this.game.achievements) {
+      if (this.level >= 5) {
+        this.game.achievements.unlock('reach_level_5');
+      }
+      if (this.level >= 10) {
+        this.game.achievements.unlock('reach_level_10');
+      }
+    }
+  }
+}
+
+applyLevelBonus(level) {
+  const bonus = this.levelBonuses[level];
+  if (!bonus) return;
+  
+  // Apply bonuses
+  if (bonus.baseRadius) {
+    this.baseRadius = bonus.baseRadius;
+  }
+  
+  if (bonus.healthRegenRate) {
+    this.healthRegenRate = bonus.healthRegenRate;
+  }
+  
+  if (bonus.shrinkRate) {
+    this.shrinkRate = bonus.shrinkRate;
+  }
+  
+  if (bonus.baseSpeed) {
+    this.baseSpeed = bonus.baseSpeed;
+  }
+  
+  if (bonus.growthRate) {
+    this.growthRate = bonus.growthRate;
+  }
+  
+  if (bonus.ejectCooldownTime) {
+    this.ejectCooldownTime = bonus.ejectCooldownTime;
+  }
+  
+  if (bonus.splitCooldown) {
+    this.splitCooldown = bonus.splitCooldown;
+  }
+  
+  if (bonus.maxHealth) {
+    this.maxHealth = bonus.maxHealth;
+    this.health = this.maxHealth; // Refill health on level up
+  }
+}
+
+addNotification(message, color = '#ffffff') {
+  // Add notification to the queue
+  this.notifications.push({
+    message,
+    color,
+    time: Date.now(),
+    duration: 3000, // 3 seconds
+    opacity: 1
+  });
+  
+  // Limit the number of notifications
+  if (this.notifications.length > this.maxNotifications) {
+    this.notifications.shift();
+  }
+}
+
+updateNotifications(deltaTime) {
+  // Update notification timers and opacity
+  this.notifications = this.notifications.filter(notification => {
+    const elapsed = Date.now() - notification.time;
+    
+    // Start fading out after 2/3 of the duration
+    if (elapsed > notification.duration * 2 / 3) {
+      notification.opacity = Math.max(0, 1 - (elapsed - notification.duration * 2 / 3) / (notification.duration / 3));
+    }
+    
+    return elapsed < notification.duration;
+  });
+}
+
+takeDamage(amount) {
+  // No damage if shield is active
+  if (this.powerUps.shield.active || this.damageImmunity) return;
+  
+  this.health -= amount;
+  
+  // Create damage effect
+  this.effects.push({
+    type: 'damage',
+    duration: 500,
+    startTime: Date.now()
+  });
+  
+  // Create damage particles
+  if (this.game.particles) {
+    this.game.particles.createDamageParticles(this.x, this.y);
+  }
+  
+  // Play damage sound
+  if (this.game.soundManager) {
+    this.game.soundManager.playSound('damage');
+  }
+  
+  // Check if dead
+  if (this.health <= 0) {
+    this.health = 0;
+    this.handleDeath();
+  }
+}
+
+split() {
+  // Check if split is on cooldown
+  if (!this.canSplit || this.cells.length >= this.game.maxCellsPerPlayer) return;
+  
+  // Set cooldown
+  this.canSplit = false;
+  this.splitCooldownTime = Date.now() + this.splitCooldown;
+  
+  // Update stats
+  this.stats.timesSplit++;
+  
+  // Play split sound
+  if (this.game.soundManager) {
+    this.game.soundManager.playSound('split');
+  }
+  
+  // Create a copy of cells to avoid modification during iteration
+  const cellsToSplit = [...this.cells];
+  
+  cellsToSplit.forEach((cell, index) => {
+    if (cell.radius >= this.baseRadius * 1.5 && this.cells.length < this.game.maxCellsPerPlayer) {
+      this.splitCell(index);
+    }
+  });
+}
+
+splitCell(index, targetX, targetY) {
+  const cell = this.cells[index];
+  
+  // Calculate direction
+  let dx, dy;
+  if (targetX !== undefined && targetY !== undefined) {
+    // Split towards target
+    dx = targetX - cell.x;
+    dy = targetY - cell.y;
+  } else {
+    // Split towards mouse
+    dx = this.targetX - cell.x;
+    dy = this.targetY - cell.y;
+  }
+  
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  // Normalize direction
+  const dirX = distance > 0 ? dx / distance : 1;
+  const dirY = distance > 0 ? dy / distance : 0;
+  
+  // Create new cell
+  const newMass = cell.mass / 2;
+  cell.mass = newMass;
+  cell.radius = Math.sqrt(cell.mass / Math.PI);
+  
+  // Position the new cell slightly away from the original to prevent immediate overlap
+  const offsetDistance = cell.radius * 0.2;
+  const now = Date.now();
+  
+  const newCell = {
+    x: cell.x + dirX * offsetDistance,
+    y: cell.y + dirY * offsetDistance,
+    radius: cell.radius,
+    mass: newMass,
+    velocityX: dirX * this.splitVelocity,
+    velocityY: dirY * this.splitVelocity,
+    splitTime: now,
+    mergeTime: now + this.mergeTime,
+    membrane: {
+      points: cell.membrane.points,
+      elasticity: cell.membrane.elasticity,
+      distortion: cell.membrane.distortion,
+      oscillation: cell.membrane.oscillation,
+      oscillationSpeed: cell.membrane.oscillationSpeed,
+      phase: Math.random() * Math.PI * 2,
+      vertices: []
+    },
+    z: 0,
+    id: 'cell-' + now + '-' + this.cells.length,
+    effects: []
+  };
+  
+  // Initialize membrane for new cell
+  this.initCellMembrane(newCell);
+  
+  // Distort both membranes in the split direction
+  this.distortMembrane(cell, -dirX, -dirY, 0.5);
+  this.distortMembrane(newCell, dirX, dirY, 0.5);
+  
+  this.cells.push(newCell);
+  
+  // Create split particles
+  if (this.game.particles) {
+    this.game.particles.createSplitParticles(cell.x, cell.y, this.color, dirX, dirY);
+  }
+}
+
+ejectMass() {
+  // Check if eject is on cooldown
+  if (this.ejectCooldown > 0) return;
+  
+  // Set cooldown
+  this.ejectCooldown = this.ejectCooldownTime;
+  
+  // Update stats
+  this.stats.timesEjected++;
+  
+  // Play eject sound
+  if (this.game.soundManager) {
+    this.game.soundManager.playSound('eject');
+  }
+  
+  this.cells.forEach(cell => {
+    // Only eject if cell is big enough
+    if (cell.mass > this.ejectMinMass) {
+      // Calculate direction
+      const dx = this.targetX - cell.x;
+      const dy = this.targetY - cell.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // Normalize direction
+      const dirX = distance > 0 ? dx / distance : 1;
+      const dirY = distance > 0 ? dy / distance : 0;
+      
+      // Calculate ejected mass (smaller amount for better gameplay)
+      const ejectedMass = Math.min(cell.mass * this.ejectMassAmount, 20);
+      
+      // Only eject if it won't make the cell too small
+      if (cell.mass - ejectedMass > this.ejectMinMass / 2) {
+        // Reduce cell mass
+        cell.mass -= ejectedMass;
+        cell.radius = Math.sqrt(cell.mass / Math.PI);
+        
+        // Calculate ejection position (further from cell)
+        const ejectionX = cell.x + dirX * cell.radius * this.ejectDistance;
+        const ejectionY = cell.y + dirY * cell.radius * this.ejectDistance;
+        
+        // Create ejected mass as food
+        this.game.foods.push({
+          x: ejectionX,
+          y: ejectionY,
+          radius: this.ejectSize,
+          mass: ejectedMass * 0.8,
+          color: this.color,
+          velocityX: dirX * this.ejectSpeed,
+          velocityY: dirY * this.ejectSpeed,
+          ejectedBy: this.id,
+          ejectionTime: Date.now(),
+          game: this.game,
+          update: function(deltaTime) {
+            // Update position based on velocity with improved deceleration
+            const elapsed = Date.now() - this.ejectionTime;
+            const slowdownFactor = Math.pow(this.game.player.ejectDeceleration, elapsed / 16.67);
+            
+            this.velocityX *= slowdownFactor;
+            this.velocityY *= slowdownFactor;
+            
+            this.x += this.velocityX * deltaTime;
+            this.y += this.velocityY * deltaTime;
+            
+            // Keep within world bounds
+            if (this.game) {
+              this.x = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.x));
+              this.y = Math.max(this.radius, Math.min(this.game.worldSize - this.radius, this.y));
+            }
+          },
+          draw: function(ctx) {
+            ctx.beginPath();
+            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+            ctx.fillStyle = this.color;
+            ctx.fill();
+          }
+        });
+        
+        // Create particles
+        if (this.game.particles) {
+          this.game.particles.createEjectParticles(
+            ejectionX, 
+            ejectionY, 
+            this.color, 
+            dirX, 
+            dirY
+          );
+        }
+        
+        // Distort membrane in ejection direction
+        this.distortMembrane(cell, dirX, dirY, 0.3);
+      }
+    }
+  });
+}
+
+setSkin(skinId) {
+  this.skin = skinId;
+  
+  // Create skin object
+  if (skinId && skinId !== 'default') {
+    this.skinObject = new Skin(skinId, this.color);
+  } else {
+    this.skinObject = null;
+  }
+}
+draw(ctx) {
+  // Sort cells by z-index to handle layering
+  const sortedCells = [...this.cells].sort((a, b) => a.z - b.z);
+  
+  // Draw cells
+  sortedCells.forEach(cell => {
+    // Apply invisibility
+    const opacity = this.powerUps.invisibility.active ? this.powerUps.invisibility.opacity : 1;
+    
+    // Draw cell with membrane
+    this.drawCellWithMembrane(ctx, cell, opacity);
+    
+    // Reset opacity
+    ctx.globalAlpha = 1;
+    
+    // Draw team indicator if in team mode
+    if (this.game.gameMode === 'teams' && this.team) {
+      ctx.beginPath();
+      ctx.arc(cell.x, cell.y, cell.radius + 5, 0, Math.PI * 2);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = this.game.getTeamColor(this.team);
+      ctx.stroke();
+    }
+    
+    // Draw cell effects
+    if (cell.effects && cell.effects.length > 0) {
+      cell.effects.forEach(effect => {
+        if (effect.type === 'freeze') {
+          // Draw freeze effect
+          ctx.beginPath();
+          ctx.arc(cell.x, cell.y, cell.radius + 3, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(33, 150, 243, 0.7)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          
+          // Draw snowflake icon
+          ctx.font = `${Math.min(16, cell.radius / 2)}px Arial`;
+          ctx.fillStyle = 'rgba(33, 150, 243, 0.7)';
+          ctx.fillText('❄️', cell.x, cell.y - cell.radius - 10);
+        }
+      });
+    }
+  });
+  
+  // Draw effects
+  this.drawEffects(ctx);
+  
+  // Draw power-up indicators
+  this.drawPowerUpIndicators(ctx);
+  
+  // Draw magnet range if active
+  if (this.powerUps.magnet.active) {
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.powerUps.magnet.range, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(128, 0, 128, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    
+    // Add pulsing effect
+    const pulseSize = this.powerUps.magnet.range * (1 + Math.sin(Date.now() / 200) * 0.05);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, pulseSize, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(128, 0, 128, 0.1)';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  
+  // Draw shield if active
+  if (this.powerUps.shield.active) {
+    this.cells.forEach(cell => {
+      const pulseSize = cell.radius * (1.1 + Math.sin(Date.now() / 150) * 0.05);
+      
+      ctx.beginPath();
+      ctx.arc(cell.x, cell.y, pulseSize, 0, Math.PI * 2);
+      
+      // Create gradient for shield
+      const gradient = ctx.createRadialGradient(
+        cell.x, cell.y, cell.radius,
+        cell.x, cell.y, pulseSize
+      );
+      gradient.addColorStop(0, 'rgba(103, 58, 183, 0)');
+      gradient.addColorStop(0.8, 'rgba(103, 58, 183, 0.2)');
+      gradient.addColorStop(1, 'rgba(103, 58, 183, 0.5)');
+      
+      ctx.fillStyle = gradient;
+      ctx.fill();
+      
+      // Add shield border
+      ctx.strokeStyle = 'rgba(103, 58, 183, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+  }
+  
+  // Draw speed boost effect if active
+  if (this.powerUps.speedBoost.active) {
+    this.cells.forEach(cell => {
+      // Draw speed lines behind the cell
+      const angle = Math.atan2(this.targetY - cell.y, this.targetX - cell.x);
+      
+      ctx.save();
+      ctx.translate(cell.x, cell.y);
+      ctx.rotate(angle + Math.PI); // Rotate to face away from movement direction
+      
+      // Draw multiple speed lines
+      ctx.strokeStyle = 'rgba(0, 188, 212, 0.5)';
+      ctx.lineWidth = 2;
+      
+      for (let i = 0; i < 5; i++) {
+        const lineAngle = (i / 5) * Math.PI - Math.PI / 2;
+        const lineLength = cell.radius * (0.8 + Math.random() * 0.4);
+        const offsetX = Math.cos(lineAngle) * cell.radius * 0.2;
+        const offsetY = Math.sin(lineAngle) * cell.radius * 0.2;
+        
+        ctx.beginPath();
+        ctx.moveTo(offsetX, offsetY);
+        ctx.lineTo(
+          offsetX - lineLength * (0.7 + Math.sin(Date.now() / 100 + i) * 0.3),
+          offsetY
+        );
+        ctx.stroke();
+      }
+      
+      ctx.restore();
+    });
+  }
+  
+  // Draw freeze effect if active
+  if (this.powerUps.freeze.active) {
+    // Draw freeze aura
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 300, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(33, 150, 243, 0.1)';
+    ctx.fill();
+    
+    // Draw freeze border
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, 300 * (1 + Math.sin(Date.now() / 300) * 0.05), 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(33, 150, 243, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  
+  // Draw notifications
+  this.notifications.forEach((notification, index) => {
+    ctx.font = '14px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = notification.color;
+    ctx.globalAlpha = notification.opacity;
+    
+    // Position notifications above the player
+    const y = this.y - this.radius - 30 - index * 20;
+    ctx.fillText(notification.message, this.x, y);
+  });
+  
+  // Reset opacity
+  ctx.globalAlpha = 1;
+  
+  // Draw player name
+  if (this.cells.length > 0) {
+    const largestCell = this.cells.reduce((largest, cell) => 
+      cell.radius > largest.radius ? cell : largest, this.cells[0]);
+    
+    if (largestCell.radius > 20) {
+      ctx.font = `${Math.min(16, largestCell.radius / 2)}px ${this.nameFont}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = this.nameColor;
+      ctx.fillText(this.name, this.x, this.y);
+      
+      // Draw score if cell is big enough
+      if (largestCell.radius > 40) {
+        ctx.font = `${Math.min(12, largestCell.radius / 3)}px ${this.nameFont}`;
+        ctx.fillText(Math.floor(this.score), this.x, this.y + Math.min(16, largestCell.radius / 2) + 2);
+      }
+    }
+  }
+  
+  // Draw debug info if debug mode is enabled
+  if (this.game.debugMode) {
+    ctx.font = '12px Arial';
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.fillText(`Cells: ${this.cells.length}`, this.x, this.y - this.radius - 40);
+    ctx.fillText(`Pos: (${Math.floor(this.x)}, ${Math.floor(this.y)})`, this.x, this.y - this.radius - 55);
+    ctx.fillText(`Target: (${Math.floor(this.targetX)}, ${Math.floor(this.targetY)})`, this.x, this.y - this.radius - 70);
+    
+    // Draw target indicator
+    ctx.beginPath();
+    ctx.arc(this.targetX, this.targetY, 5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+    ctx.fill();
+    
+    // Draw line to target
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(this.targetX, this.targetY);
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+drawCellWithMembrane(ctx, cell, opacity) {
+  if (!cell || !cell.membrane) {
+    console.error("Invalid cell or membrane for drawing:", cell);
+    return;
+  }
+  
+  const { membrane } = cell;
+  
+  ctx.globalAlpha = opacity;
+  ctx.beginPath();
+  
+  // Draw membrane using vertices
+  if (membrane.vertices && membrane.vertices.length > 0) {
+    const firstVertex = membrane.vertices[0];
+    if (!firstVertex) {
+      console.error("No vertices in membrane:", membrane);
+      return;
+    }
+    
+    const startX = cell.x + (firstVertex.baseX + firstVertex.distortionX) * cell.radius;
+    const startY = cell.y + (firstVertex.baseY + firstVertex.distortionY) * cell.radius;
+    
+    ctx.moveTo(startX, startY);
+    
+    // Draw the rest of the vertices
+    for (let i = 1; i < membrane.vertices.length; i++) {
+      const vertex = membrane.vertices[i];
+      if (!vertex) continue;
+      
+      const x = cell.x + (vertex.baseX + vertex.distortionX) * cell.radius;
+      const y = cell.y + (vertex.baseY + vertex.distortionY) * cell.radius;
+      
+      ctx.lineTo(x, y);
+    }
+    
+    // Close the path
+    ctx.closePath();
+  } else {
+    // Fallback to circle if no vertices
+    ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
+  }
+  
+  // Apply visual effects for power-ups
+  if (this.powerUps.shield.active) {
+    // Shield effect
+    const gradient = ctx.createRadialGradient(
+      cell.x, cell.y, cell.radius * 0.8,
+      cell.x, cell.y, cell.radius
+    );
+    gradient.addColorStop(0, this.color);
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0.7)');
+    ctx.fillStyle = gradient;
+  } else if (this.powerUps.speedBoost.active) {
+    // Speed boost effect
+    const gradient = ctx.createRadialGradient(
+      cell.x, cell.y, 0,
+      cell.x, cell.y, cell.radius
+    );
+    gradient.addColorStop(0, this.color);
+    gradient.addColorStop(1, 'rgba(0, 255, 255, 0.5)');
+    ctx.fillStyle = gradient;
+  } else if (this.powerUps.massBoost.active) {
+    // Mass boost effect
+    const gradient = ctx.createRadialGradient(
+      cell.x, cell.y, 0,
+      cell.x, cell.y, cell.radius
+    );
+    gradient.addColorStop(0, this.color);
+    gradient.addColorStop(1, 'rgba(255, 215, 0, 0.5)');
+    ctx.fillStyle = gradient;
+  } else if (this.powerUps.magnet.active) {
+    // Magnet effect
+    const gradient = ctx.createRadialGradient(
+      cell.x, cell.y, 0,
+      cell.x, cell.y, cell.radius
+    );
+    gradient.addColorStop(0, this.color);
+    gradient.addColorStop(1, 'rgba(128, 0, 128, 0.5)');
+    ctx.fillStyle = gradient;
+  } else if (this.powerUps.freeze.active) {
+    // Freeze effect
+    const gradient = ctx.createRadialGradient(
+      cell.x, cell.y, 0,
+      cell.x, cell.y, cell.radius
+    );
+    gradient.addColorStop(0, this.color);
+    gradient.addColorStop(1, 'rgba(33, 150, 243, 0.5)');
+    ctx.fillStyle = gradient;
+  } else if (this.powerUps.doubleScore.active) {
+    // Double score effect
+    const gradient = ctx.createRadialGradient(
+      cell.x, cell.y, 0,
+      cell.x, cell.y, cell.radius
+    );
+    gradient.addColorStop(0, this.color);
+    gradient.addColorStop(1, 'rgba(255, 235, 59, 0.5)');
+    ctx.fillStyle = gradient;
+  } else {
+    // Normal cell - apply skin if available
+    if (this.skinObject && this.skinObject.isLoaded) {
+      this.skinObject.drawSkin(ctx, cell.x, cell.y, cell.radius);
+    } else {
+      ctx.fillStyle = this.color;
+    }
+  }
+  
+  ctx.fill();
+  
+  // Draw cell border if enabled
+  if (this.cellBorder) {
+    ctx.lineWidth = this.cellBorderWidth;
+    ctx.strokeStyle = this.cellBorderColor;
+    ctx.stroke();
+  }
+  
+  // Draw cell nucleus
+  ctx.beginPath();
+  ctx.arc(cell.x, cell.y, cell.radius * 0.3, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+  ctx.fill();
+  
+  // Draw cytoplasm details (small circles inside the cell)
+  const numDetails = Math.floor(cell.radius / 10);
+  for (let i = 0; i < numDetails; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = Math.random() * cell.radius * 0.7;
+    const detailX = cell.x + Math.cos(angle) * distance;
+    const detailY = cell.y + Math.sin(angle) * distance;
+    const detailSize = cell.radius * 0.05 + Math.random() * cell.radius * 0.05;
+    
+    ctx.beginPath();
+    ctx.arc(detailX, detailY, detailSize, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
+    ctx.fill();
+  }
+  
+  // Draw "passing under" effect if cell is below others
+  if (cell.z < 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.3;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.beginPath();
+    ctx.arc(cell.x, cell.y, cell.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+drawEffects(ctx) {
+  const now = Date.now();
+  
+  // Draw damage effect
+  const damageEffect = this.effects.find(effect => effect.type === 'damage');
+  if (damageEffect) {
+    const elapsed = now - damageEffect.startTime;
+    const opacity = 1 - elapsed / damageEffect.duration;
+    
+    // Red flash effect
+    ctx.save();
+    ctx.globalAlpha = opacity * 0.3;
+    ctx.fillStyle = 'red';
+    
+    this.cells.forEach(cell => {
+      ctx.beginPath();
+      ctx.arc(cell.x, cell.y, cell.radius + 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    
+    ctx.restore();
+  }
+}
+
+drawPowerUpIndicators(ctx) {
+  // Only draw if player has active power-ups
+  const hasActivePowerUps = Object.values(this.powerUps).some(powerUp => powerUp.active);
+  if (!hasActivePowerUps || this.cells.length === 0) return;
+  
+  const cell = this.cells[0]; // Use first cell for indicators
+  const iconSize = 20;
+  const padding = 5;
+  const startX = cell.x - (iconSize + padding) * 2;
+  const startY = cell.y + cell.radius + 15;
+  
+  let offsetX = 0;
+  
+  // Draw power-up icons with remaining time
+  Object.entries(this.powerUps).forEach(([type, powerUp]) => {
+    if (!powerUp.active) return;
+    
+    const now = Date.now();
+    const remaining = Math.max(0, (powerUp.duration - now) / 1000);
+    const x = startX + offsetX;
+    
+    // Draw icon background
+    ctx.beginPath();
+    ctx.arc(x + iconSize / 2, startY + iconSize / 2, iconSize / 2, 0, Math.PI * 2);
+    
+    let color;
+    
+    switch (type) {
+      case 'speedBoost':
+        color = '#00bcd4';
+        break;
+      case 'shield':
+        color = '#673ab7';
+        break;
+      case 'massBoost':
+        color = '#ffc107';
+        break;
+      case 'invisibility':
+        color = '#9e9e9e';
+        break;
+      case 'magnet':
+        color = '#9c27b0';
+        break;
+      case 'freeze':
+        color = '#2196f3';
+        break;
+      case 'doubleScore':
+        color = '#ffeb3b';
+        break;
+    }
+    
+    ctx.fillStyle = color;
+    ctx.fill();
+    
+    // Draw icon
+    ctx.font = '12px Arial';
+    ctx.fillStyle = 'white';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(powerUp.icon || '?', x + iconSize / 2, startY + iconSize / 2);
+    
+    // Draw remaining time
+    ctx.font = '10px Arial';
+    ctx.fillText(Math.ceil(remaining) + 's', x + iconSize / 2, startY + iconSize + 10);
+    
+    offsetX += iconSize + padding;
+  });
+}
+
+reset() {
+  // Reset position
+  this.x = this.game.worldSize / 2;
+  this.y = this.game.worldSize / 2;
+  this.targetX = this.x;
+  this.targetY = this.y;
+  
+  // Reset size and growth
+  this.radius = this.baseRadius;
+  this.mass = Math.PI * this.radius * this.radius;
+  this.score = 0;
+  
+  // Reset cells
+  this.cells = [{ 
+    x: this.x, 
+    y: this.y, 
+    radius: this.radius, 
+    mass: this.mass,
+    membrane: {
+      points: 20,
+      elasticity: 0.3,
+      distortion: 0.15,
+      oscillation: 0.05,
+      oscillationSpeed: 1.5,
+      phase: Math.random() * Math.PI * 2,
+      vertices: []
+    },
+    z: 0,
+    id: 'cell-' + Date.now() + '-0',
+    effects: []
+  }];
+  
+  // Initialize cell membranes
+  this.initCellMembranes();
+  
+  // Reset state
+  this.isDead = false;
+  this.health = this.maxHealth;
+  this.experience = 0;
+  this.level = 1;
+  this.experienceToNextLevel = 1000;
+  
+  // Reset power-ups
+  Object.keys(this.powerUps).forEach(key => {
+    this.powerUps[key].active = false;
+    this.powerUps[key].duration = 0;
+  });
+  
+  // Reset effects
+  this.effects = [];
+  
+  // Reset notifications
+  this.notifications = [];
+  
+  // Reset cooldowns
+  this.ejectCooldown = 0;
+  this.canSplit = true;
+  this.splitCooldownTime = 0;
+  
+  // Reset damage immunity
+  this.damageImmunity = false;
+  this.damageImmunityTime = 0;
+  
+  // Reset movement history
+  this.movementHistory = [];
+  
+  // Reset stats for this game session
+  this.stats.foodEaten = 0;
+  this.stats.playersEaten = 0;
+  this.stats.virusesEaten = 0;
+  this.stats.timesEjected = 0;
+  this.stats.timesSplit = 0;
+  this.stats.powerUpsCollected = 0;
+  this.stats.distanceTraveled = 0;
+  this.stats.lastX = this.x;
+  this.stats.lastY = this.y;
+  this.stats.killStreak = 0;
+}
+
+updateInput(input) {
+  // Update input state
+  if (input.mouseX !== undefined) this.input.mouseX = input.mouseX;
+  if (input.mouseY !== undefined) this.input.mouseY = input.mouseY;
+  if (input.keys !== undefined) this.input.keys = input.keys;
+  if (input.touchActive !== undefined) this.input.touchActive = input.touchActive;
+  if (input.touchX !== undefined) this.input.touchX = input.touchX;
+  if (input.touchY !== undefined) this.input.touchY = input.touchY;
+}
+}

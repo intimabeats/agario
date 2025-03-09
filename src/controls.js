@@ -15,7 +15,7 @@ export function setupControls(game, player) {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
     
-    // Verificar se as coordenadas do mouse são válidas
+    // Verify mouse coordinates are valid
     if (isNaN(mouseX) || isNaN(mouseY)) {
       console.error("Invalid mouse coordinates:", mouseX, mouseY);
       return;
@@ -25,13 +25,15 @@ export function setupControls(game, player) {
     const worldX = game.camera.x + (mouseX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (mouseY - game.height / 2) / game.camera.scale;
     
-    // Verificar se as coordenadas do mundo são válidas
+    // Verify world coordinates are valid
     if (isNaN(worldX) || isNaN(worldY)) {
       console.error("Invalid world coordinates:", worldX, worldY);
       return;
     }
     
-    console.log("Mouse move:", mouseX, mouseY, "World:", worldX, worldY);
+    if (game.debugMode) {
+      console.log("Mouse move:", mouseX, mouseY, "World:", worldX, worldY);
+    }
     
     // Update player input
     player.updateInput({
@@ -42,8 +44,6 @@ export function setupControls(game, player) {
     // Set player target directly
     player.targetX = worldX;
     player.targetY = worldY;
-    
-    console.log("Player target updated:", player.targetX, player.targetY);
   });
   
   // Touch movement for mobile
@@ -56,7 +56,7 @@ export function setupControls(game, player) {
     const touchX = e.touches[0].clientX - rect.left;
     const touchY = e.touches[0].clientY - rect.top;
     
-    // Verificar se as coordenadas de toque são válidas
+    // Verify touch coordinates are valid
     if (isNaN(touchX) || isNaN(touchY)) {
       console.error("Invalid touch coordinates:", touchX, touchY);
       return;
@@ -66,7 +66,7 @@ export function setupControls(game, player) {
     const worldX = game.camera.x + (touchX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (touchY - game.height / 2) / game.camera.scale;
     
-    // Verificar se as coordenadas do mundo são válidas
+    // Verify world coordinates are valid
     if (isNaN(worldX) || isNaN(worldY)) {
       console.error("Invalid world coordinates from touch:", worldX, worldY);
       return;
@@ -93,7 +93,7 @@ export function setupControls(game, player) {
     const touchX = e.touches[0].clientX - rect.left;
     const touchY = e.touches[0].clientY - rect.top;
     
-    // Verificar se as coordenadas de toque são válidas
+    // Verify touch coordinates are valid
     if (isNaN(touchX) || isNaN(touchY)) {
       console.error("Invalid touch start coordinates:", touchX, touchY);
       return;
@@ -103,7 +103,7 @@ export function setupControls(game, player) {
     const worldX = game.camera.x + (touchX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (touchY - game.height / 2) / game.camera.scale;
     
-    // Verificar se as coordenadas do mundo são válidas
+    // Verify world coordinates are valid
     if (isNaN(worldX) || isNaN(worldY)) {
       console.error("Invalid world coordinates from touch start:", worldX, worldY);
       return;
@@ -509,233 +509,4 @@ function setupMobileControls(game, player) {
       }
     }
   });
-}
-
-function setupJoystick(game, player) {
-  // Create joystick container
-  const joystickContainer = document.createElement('div');
-  joystickContainer.id = 'joystick-container';
-  joystickContainer.className = 'joystick-container';
-  
-  // Create joystick knob
-  const joystickKnob = document.createElement('div');
-  joystickKnob.className = 'joystick-knob';
-  
-  joystickContainer.appendChild(joystickKnob);
-  document.body.appendChild(joystickContainer);
-  
-  // Joystick variables
-  let joystickActive = false;
-  let joystickOrigin = { x: 0, y: 0 };
-  const maxDistance = 35;
-  
-  // Joystick touch events
-  joystickContainer.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    joystickActive = true;
-    
-    const rect = joystickContainer.getBoundingClientRect();
-    joystickOrigin.x = rect.left + rect.width / 2;
-    joystickOrigin.y = rect.top + rect.height / 2;
-    
-    updateJoystickPosition(e.touches[0].clientX, e.touches[0].clientY);
-  });
-  
-  document.addEventListener('touchmove', (e) => {
-    if (!joystickActive) return;
-    e.preventDefault();
-    updateJoystickPosition(e.touches[0].clientX, e.touches[0].clientY);
-  }, { passive: false });
-  
-  document.addEventListener('touchend', () => {
-    if (!joystickActive) return;
-    joystickActive = false;
-    joystickKnob.style.top = '50%';
-    joystickKnob.style.left = '50%';
-    joystickKnob.style.transform = 'translate(-50%, -50%)';
-  });
-  
-  function updateJoystickPosition(touchX, touchY) {
-    // Calculate distance from center
-    const dx = touchX - joystickOrigin.x;
-    const dy = touchY - joystickOrigin.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // Normalize and limit distance
-    const angle = Math.atan2(dy, dx);
-    const limitedDistance = Math.min(distance, maxDistance);
-    
-    // Update knob position
-    const knobX = Math.cos(angle) * limitedDistance;
-    const knobY = Math.sin(angle) * limitedDistance;
-    joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
-    
-    // Calculate direction for player movement
-    if (distance > 10) { // Small threshold to prevent tiny movements
-      // Calculate target position in world coordinates
-      const dirX = Math.cos(angle);
-      const dirY = Math.sin(angle);
-      const strength = limitedDistance / maxDistance;
-      
-      // Set player target relative to current position
-      const moveDistance = 200 * strength; // Adjust this value for sensitivity
-      player.targetX = player.x + dirX * moveDistance;
-      player.targetY = player.y + dirY * moveDistance;
-    }
-  }
-  
-  // Hide joystick when game is over or paused
-  const updateJoystickVisibility = () => {
-    if (game.isGameOver || game.isPaused) {
-      joystickContainer.style.display = 'none';
-    } else {
-      joystickContainer.style.display = 'block';
-    }
-  };
-  
-  // Set up an interval to check game state
-  const visibilityInterval = setInterval(updateJoystickVisibility, 500);
-  
-  // Clean up when game ends
-  game.canvas.addEventListener('gameStateChange', (e) => {
-    if (e.detail && e.detail.type === 'gameOver') {
-      clearInterval(visibilityInterval);
-    }
-  });
-}
-
-function toggleFullscreen(element) {
-  if (!document.fullscreenElement) {
-    if (element.requestFullscreen) {
-      element.requestFullscreen();
-    } else if (element.webkitRequestFullscreen) { /* Safari */
-      element.webkitRequestFullscreen();
-    } else if (element.msRequestFullscreen) { /* IE11 */
-      element.msRequestFullscreen();
-    }
-  } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.webkitExitFullscreen) { /* Safari */
-      document.webkitExitFullscreen();
-    } else if (document.msExitFullscreen) { /* IE11 */
-      document.msExitFullscreen();
-    }
-  }
-}
-
-function toggleMute(game) {
-  if (game.soundManager) {
-    game.soundManager.toggleSound();
-    game.soundManager.toggleMusic();
-    
-    // Save settings
-    game.saveSettings();
-    
-    // Show notification
-    const isMuted = !game.soundManager.soundEnabled && !game.soundManager.musicEnabled;
-    const message = isMuted ? 'Sound muted' : 'Sound enabled';
-    
-    // Create temporary notification
-    const notification = document.createElement('div');
-    notification.textContent = message;
-    notification.style.position = 'absolute';
-    notification.style.top = '20px';
-    notification.style.left = '50%';
-    notification.style.transform = 'translateX(-50%)';
-    notification.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-    notification.style.color = 'white';
-    notification.style.padding = '10px 20px';
-    notification.style.borderRadius = '5px';
-    notification.style.zIndex = '1000';
-    
-    document.body.appendChild(notification);
-    
-    // Remove after 2 seconds
-    setTimeout(() => {
-      document.body.removeChild(notification);
-    }, 2000);
-  }
-}
-
-function toggleLeaderboard(game) {
-  const leaderboard = document.getElementById('leaderboard');
-  if (leaderboard) {
-    const isVisible = leaderboard.style.display !== 'none';
-    leaderboard.style.display = isVisible ? 'none' : 'block';
-    
-    // Auto-hide after 3 seconds if shown
-    if (!isVisible) {
-      setTimeout(() => {
-        leaderboard.style.display = 'none';
-      }, 3000);
-    }
-  }
-}
-
-function initializeHelp() {
-  // Create help overlay
-  const helpOverlay = document.createElement('div');
-  helpOverlay.id = 'help-overlay';
-  helpOverlay.className = 'help-overlay';
-  helpOverlay.style.display = 'none';
-  
-  // Add help content
-  helpOverlay.innerHTML = `
-    <div class="help-content">
-      <h2>Controls</h2>
-      <div class="controls-list">
-        <div class="control-item">
-          <div class="key">Mouse</div>
-          <div class="action">Move your cell</div>
-        </div>
-        <div class="control-item">
-          <div class="key">Space</div>
-          <div class="action">Split cell</div>
-        </div>
-        <div class="control-item">
-          <div class="key">W</div>
-          <div class="action">Eject mass</div>
-        </div>
-        <div class="control-item">
-          <div class="key">P / Esc</div>
-          <div class="action">Pause game</div>
-        </div>
-        <div class="control-item">
-          <div class="key">F</div>
-          <div class="action">Toggle fullscreen</div>
-        </div>
-        <div class="control-item">
-          <div class="key">M</div>
-          <div class="action">Toggle sound</div>
-        </div>
-        <div class="control-item">
-          <div class="key">Tab</div>
-          <div class="action">Show leaderboard</div>
-        </div>
-        <div class="control-item">
-          <div class="key">H</div>
-          <div class="action">Toggle help</div>
-        </div>
-      </div>
-      <button id="close-help">Close</button>
-    </div>
-  `;
-  
-  document.body.appendChild(helpOverlay);
-  
-  // Add close button functionality
-  const closeButton = document.getElementById('close-help');
-  if (closeButton) {
-    closeButton.addEventListener('click', () => {
-      helpOverlay.style.display = 'none';
-    });
-  }
-}
-
-function toggleHelp() {
-  const helpOverlay = document.getElementById('help-overlay');
-  if (helpOverlay) {
-    helpOverlay.style.display = helpOverlay.style.display === 'none' ? 'flex' : 'none';
-  }
 }
