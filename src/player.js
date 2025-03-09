@@ -287,216 +287,339 @@ initCellMembrane(cell) {
 }
 
 update(deltaTime) {
-  // Validate cells before any operations
-  this.validateCells();
-
-  // Track time played
-  this.stats.timePlayed += deltaTime;
+  // Scale delta time by time scale (for slow-motion effects)
+  const scaledDeltaTime = deltaTime * this.timeScale;
   
-  // Skip frames for performance if needed
-  if (this.skipFrames > 0) {
-    this.skipFrames--;
-    return;
+  // Performance measurement
+  const updateStart = performance.now();
+  
+  // Verify if the game is initialized correctly
+  if (!this.worldSize || isNaN(this.worldSize)) {
+    console.error("worldSize is undefined or invalid. Initializing with default value.");
+    this.worldSize = 6000; // Default value
   }
   
-  // Verify if coordinates are valid before any operation
-  if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
-    console.error("Invalid coordinates detected in update:", this.x, this.y, this.targetX, this.targetY);
-    // Reset coordinates to valid values
-    const validX = this.game ? this.game.worldSize / 2 : 3000;
-    const validY = this.game ? this.game.worldSize / 2 : 3000;
+  // Update battle royale mode
+  if (this.gameMode === 'battle-royale') {
+    try {
+      this.updateBattleRoyale(scaledDeltaTime);
+    } catch (error) {
+      console.error("Error in updateBattleRoyale:", error);
+    }
+  }
+  
+  // Update team scores
+  if (this.gameMode === 'teams') {
+    try {
+      this.updateTeamScores();
+    } catch (error) {
+      console.error("Error in updateTeamScores:", error);
+    }
+  }
+  
+  // Update spatial grid
+  try {
+    this.updateSpatialGrid();
+  } catch (error) {
+    console.error("Error in updateSpatialGrid:", error);
+  }
+  
+  // Update player with error handling
+  if (this.player && !this.player.isDead) {
+    const playerUpdateStart = performance.now();
     
-    this.x = validX;
-    this.y = validY;
-    this.targetX = validX;
-    this.targetY = validY;
+    try {
+      this.player.update(scaledDeltaTime);
+    } catch (error) {
+      console.error("Error in player.update:", error);
+      
+      // Try to recover player if possible
+      if (isNaN(this.player.x) || isNaN(this.player.y)) {
+        this.player.x = this.worldSize / 2;
+        this.player.y = this.worldSize / 2;
+        this.player.targetX = this.player.x;
+        this.player.targetY = this.player.y;
+      }
+    }
     
-    // Reset cells to valid positions
-    this.cells.forEach(cell => {
-      if (cell) {
-        cell.x = validX;
-        cell.y = validY;
-        cell.velocityX = 0;
-        cell.velocityY = 0;
+    try {
+      this.centerCamera();
+    } catch (error) {
+      console.error("Error in centerCamera:", error);
+    }
+    
+    // Check if player is out of bounds
+    try {
+      this.keepEntityInBounds(this.player);
+    } catch (error) {
+      console.error("Error in keepEntityInBounds:", error);
+    }
+    
+    // Apply battle royale damage if outside safe zone
+    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
+      try {
+        const dx = this.player.x - this.battleRoyaleState.safeZoneX;
+        const dy = this.player.y - this.battleRoyaleState.safeZoneY;
+        const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
+          this.player.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
+        }
+      } catch (error) {
+        console.error("Error applying battle royale damage:", error);
+      }
+    }
+    
+    // Check achievements
+    if (this.achievements) {
+      try {
+        this.achievements.checkAchievements(this.player);
+      } catch (error) {
+        console.error("Error in checkAchievements:", error);
+      }
+    }
+    
+    this.stats.playerUpdateTime = performance.now() - playerUpdateStart;
+  } else if (this.player && this.player.isDead) {
+    try {
+      this.handleGameOver();
+    } catch (error) {
+      console.error("Error in handleGameOver:", error);
+    }
+  }
+  
+  // Update AI players
+  const aiUpdateStart = performance.now();
+  if (this.ais && this.ais.length > 0) {
+    this.ais.forEach(ai => {
+      if (!ai.isDead) {
+        try {
+          ai.update(scaledDeltaTime);
+          
+          // Keep AI in bounds
+          this.keepEntityInBounds(ai);
+          
+          // Apply battle royale damage if outside safe zone
+          if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
+            const dx = ai.x - this.battleRoyaleState.safeZoneX;
+            const dy = ai.y - this.battleRoyaleState.safeZoneY;
+            const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
+              ai.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
+            }
+          }
+        } catch (error) {
+          console.error("Error updating AI:", error);
+        }
+      } else {
+        // Queue dead AIs for removal
+        this.removalQueues.ais.push(ai);
+      }
+    });
+  }
+  this.stats.aiTime = performance.now() - aiUpdateStart;
+  
+  // Update food
+  if (this.foods && this.foods.length > 0) {
+    this.foods.forEach(food => {
+      try {
+        food.update(scaledDeltaTime);
+      } catch (error) {
+        console.error("Error updating food:", error);
       }
     });
   }
   
-  // Move towards target with validation
-  try {
-    this.moveTowardsTarget(deltaTime);
-  } catch (error) {
-    console.error("Error in moveTowardsTarget:", error);
-    // Continue execution despite errors
-  }
-  
-  // Check collisions
-  try {
-    this.checkCollisions();
-  } catch (error) {
-    console.error("Error in checkCollisions:", error);
-    // Continue execution despite errors
-  }
-  
-  // Update cells
-  try {
-    this.updateCells(deltaTime);
-  } catch (error) {
-    console.error("Error in updateCells:", error);
-    // Continue execution despite errors
-  }
-  
-  // Update cell membranes
-  try {
-    this.updateCellMembranes(deltaTime);
-  } catch (error) {
-    console.error("Error in updateCellMembranes:", error);
-    // Continue execution despite errors
+  // Update viruses
+  if (this.viruses && this.viruses.length > 0) {
+    this.viruses.forEach(virus => {
+      try {
+        virus.update(scaledDeltaTime);
+      } catch (error) {
+        console.error("Error updating virus:", error);
+      }
+    });
   }
   
   // Update power-ups
-  try {
-    this.updatePowerUps(deltaTime);
-  } catch (error) {
-    console.error("Error in updatePowerUps:", error);
-    // Continue execution despite errors
-  }
-  
-  // Update score
-  try {
-    this.updateScore();
-  } catch (error) {
-    console.error("Error in updateScore:", error);
-    // Continue execution despite errors
-  }
-  
-  // Update center of mass with validation
-  try {
-    this.updateCenterOfMass();
-  } catch (error) {
-    console.error("Error in updateCenterOfMass:", error);
-    // If center of mass calculation fails, use a valid position
-    if (isNaN(this.x) || isNaN(this.y)) {
-      this.x = this.game ? this.game.worldSize / 2 : 3000;
-      this.y = this.game ? this.game.worldSize / 2 : 3000;
-    }
-  }
-  
-  // Update max score and size stats
-  if (!isNaN(this.score) && this.score > this.stats.maxScore) {
-    this.stats.maxScore = this.score;
-  }
-  
-  const largestCell = this.cells.reduce((largest, cell) => {
-    if (!cell || isNaN(cell.radius)) return largest;
-    return cell.radius > largest.radius ? cell : largest;
-  }, this.cells[0] || { radius: this.baseRadius });
-  
-  if (!isNaN(largestCell.radius) && largestCell.radius > this.stats.maxSize) {
-    this.stats.maxSize = largestCell.radius;
-  }
-  
-  // Update distance traveled with validation
-  if (!isNaN(this.x) && !isNaN(this.y) && !isNaN(this.stats.lastX) && !isNaN(this.stats.lastY)) {
-    const dx = this.x - this.stats.lastX;
-    const dy = this.y - this.stats.lastY;
-    
-    if (!isNaN(dx) && !isNaN(dy)) {
-      const distanceMoved = Math.sqrt(dx * dx + dy * dy);
-      
-      if (!isNaN(distanceMoved)) {
-        this.stats.distanceTraveled += distanceMoved;
-        this.stats.lastX = this.x;
-        this.stats.lastY = this.y;
-        
-        // Update movement history for trail effects
-        if (distanceMoved > 0.1) {
-          this.movementHistory.push({ x: this.x, y: this.y, time: Date.now() });
-          if (this.movementHistory.length > this.movementHistoryMaxLength) {
-            this.movementHistory.shift();
-          }
-        }
+  if (this.powerUps && this.powerUps.length > 0) {
+    this.powerUps.forEach(powerUp => {
+      try {
+        powerUp.update(scaledDeltaTime);
+      } catch (error) {
+        console.error("Error updating power-up:", error);
       }
-    }
-  } else {
-    // Reset last position to current position if invalid
-    this.stats.lastX = !isNaN(this.x) ? this.x : (this.game ? this.game.worldSize / 2 : 3000);
-    this.stats.lastY = !isNaN(this.y) ? this.y : (this.game ? this.game.worldSize / 2 : 3000);
-  }
-  
-  // Update speed based on size
-  try {
-    this.updateSpeedBasedOnSize();
-  } catch (error) {
-    console.error("Error in updateSpeedBasedOnSize:", error);
-    // Set a default speed if calculation fails
-    this.speed = this.baseSpeed;
-  }
-  
-  // Regenerate health
-  this.regenerateHealth(deltaTime);
-  
-  // Check for level up
-  this.checkLevelUp();
-  
-  // Apply magnet power-up
-  if (this.powerUps.magnet.active) {
-    try {
-      this.applyMagnetEffect();
-    } catch (error) {
-      console.error("Error in applyMagnetEffect:", error);
-    }
-  }
-  
-  // Apply freeze power-up
-  if (this.powerUps.freeze.active) {
-    try {
-      this.applyFreezeEffect();
-    } catch (error) {
-      console.error("Error in applyFreezeEffect:", error);
-    }
-  }
-  
-  // Update eject cooldown
-  if (this.ejectCooldown > 0) {
-    this.ejectCooldown -= deltaTime * 1000;
-  }
-  
-  // Update notifications
-  this.updateNotifications(deltaTime);
-  
-  // Create trail effect if moving fast
-  if (this.powerUps.speedBoost.active && this.game.particles) {
-    this.cells.forEach(cell => {
-      if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius)) return;
-      
-      this.game.particles.createTrailEffect(cell, {
-        color: this.color,
-        size: cell.radius * 0.2,
-        interval: 0.05,
-        life: 0.3,
-        fadeOut: true,
-        shrink: 2
-      });
     });
   }
   
-  // Update effects
-  this.updateEffects(deltaTime);
-  
-  // Update damage immunity
-  if (this.damageImmunity && Date.now() > this.damageImmunityTime) {
-    this.damageImmunity = false;
+  // Update particles
+  if (this.particles) {
+    try {
+      this.particles.update(scaledDeltaTime);
+    } catch (error) {
+      console.error("Error updating particles:", error);
+    }
   }
   
-  // Final validation of player position
-  if (isNaN(this.x) || isNaN(this.y)) {
-    console.error("Player position is invalid after update");
-    this.x = this.game ? this.game.worldSize / 2 : 3000;
-    this.y = this.game ? this.game.worldSize / 2 : 3000;
+  // Only add new AIs in classic mode or if battle royale hasn't started yet
+  if (this.gameMode === 'classic' || 
+      (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active)) {
+    this.replenishAIs();
+  }
+  
+  // Replenish food in batches for better performance
+  //this.replenishFood();
+  
+  // Replenish viruses
+  //this.replenishViruses();
+  
+  // Replenish power-ups
+ // this.replenishPowerUps();
+  
+  // Check for battle royale start
+  if (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active && this.gameTime > 30) {
+    this.startBattleRoyale();
+  }
+  
+  // Update visible entities for rendering optimization
+  //this.updateVisibleEntities();
+  
+  // Process removal queues
+  //this.processRemovalQueues();
+  
+  // Update performance stats
+  this.stats.updateTime = performance.now() - updateStart;
+}
+
+	keepEntityInBounds(entity) {
+  if (!entity) return;
+  
+  // Verify if worldSize is defined
+  if (!this.worldSize) {
+    console.error("worldSize is undefined in keepEntityInBounds. Using default value.");
+    this.worldSize = 6000; // Default value
+  }
+  
+  // Keep entity position within world bounds
+  entity.x = Math.max(0, Math.min(this.worldSize, entity.x));
+  entity.y = Math.max(0, Math.min(this.worldSize, entity.y));
+  
+  // Also keep all cells within bounds
+  if (entity.cells) {
+    entity.cells.forEach(cell => {
+      if (!cell || !cell.radius) return;
+      
+      cell.x = Math.max(cell.radius, Math.min(this.worldSize - cell.radius, cell.x));
+      cell.y = Math.max(cell.radius, Math.min(this.worldSize - cell.radius, cell.y));
+    });
   }
 }
 
+	centerCamera() {
+  if (!this.player) {
+    // Default to center of world if no player
+    this.camera.x = this.worldSize / 2;
+    this.camera.y = this.worldSize / 2;
+    return;
+  }
+  
+  // Verify player coordinates are valid
+  if (isNaN(this.player.x) || isNaN(this.player.y)) {
+    console.error("Invalid player coordinates for camera centering:", this.player.x, this.player.y);
+    
+    // Use last valid camera position or default to center
+    if (isNaN(this.camera.x) || isNaN(this.camera.y)) {
+      this.camera.x = this.worldSize / 2;
+      this.camera.y = this.worldSize / 2;
+    }
+    return;
+  }
+  
+  // Calculate target camera position (center of mass of player cells)
+  let totalX = 0;
+  let totalY = 0;
+  let totalMass = 0;
+  let validCellCount = 0;
+  
+  if (!this.player.cells || this.player.cells.length === 0) {
+    // If player has no cells, use player position directly
+    this.camera.x = this.player.x;
+    this.camera.y = this.player.y;
+    return;
+  }
+  
+  this.player.cells.forEach(cell => {
+    // Verify cell coordinates and mass are valid
+    if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
+      return;
+    }
+    
+    totalX += cell.x * cell.mass;
+    totalY += cell.y * cell.mass;
+    totalMass += cell.mass;
+    validCellCount++;
+  });
+  
+  // If no valid cells, use player position
+  if (validCellCount === 0 || totalMass <= 0) {
+    this.camera.x = this.player.x;
+    this.camera.y = this.player.y;
+  } else {
+    const targetX = totalX / totalMass;
+    const targetY = totalY / totalMass;
+    
+    // Verify calculated coordinates are valid
+    if (isNaN(targetX) || isNaN(targetY)) {
+      console.error("Invalid camera target calculated:", totalX, totalY, totalMass);
+      return;
+    }
+    
+    // Smooth camera movement
+    if (isNaN(this.camera.x) || isNaN(this.camera.y)) {
+      this.camera.x = targetX;
+      this.camera.y = targetY;
+    } else {
+      this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
+      this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
+    }
+  }
+  
+  // Calculate camera scale based on player size
+  if (this.player.cells.length > 0) {
+    // Find largest valid cell
+    let largestRadius = 0;
+    this.player.cells.forEach(cell => {
+      if (cell && !isNaN(cell.radius) && cell.radius > largestRadius) {
+        largestRadius = cell.radius;
+      }
+    });
+    
+    if (largestRadius > 0) {
+      // Scale inversely with player size, but with limits
+      const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestRadius));
+      
+      // Smooth scale transition
+      if (isNaN(this.camera.scale)) {
+        this.camera.scale = targetScale;
+      } else {
+        this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
+      }
+    }
+  }
+  
+  // Keep camera within world bounds
+  this.camera.x = Math.max(this.cameraBounds.minX, Math.min(this.cameraBounds.maxX, this.camera.x));
+  this.camera.y = Math.max(this.cameraBounds.minY, Math.min(this.cameraBounds.maxY, this.camera.y));
+  
+  // Verify final camera values are valid
+  if (isNaN(this.camera.x) || isNaN(this.camera.y) || isNaN(this.camera.scale)) {
+    console.error("Invalid camera values after centering:", this.camera.x, this.camera.y, this.camera.scale);
+    this.camera.x = this.worldSize / 2;
+    this.camera.y = this.worldSize / 2;
+    this.camera.scale = 1.0;
+  }
+}
 
 validateCells() {
   // Filter out invalid cells
@@ -1003,14 +1126,10 @@ checkVirusCollisions(viruses) {
               this.game.soundManager.playSound('virusSplit');
             }
             
-            // Add notification
-            this.addNotification('Virus consumed!', '#33ff33');
-            
             // Remove the virus
             this.game.removeVirus(virus);
           }
         } 
-        // Verification corrected: Don't use canPassUnder, directly check the size
         else if (cell.radius < virus.radius * 0.9) {
           // Smaller cells pass under the virus
           cell.z = -1;

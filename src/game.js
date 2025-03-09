@@ -213,6 +213,7 @@ export class Game {
     
     // Event listeners
     this.setupEventListeners();
+		this.animationId = null;
   }
   
   createBackgroundPattern() {
@@ -448,7 +449,7 @@ setPlayer(player) {
     return this.teams[teamName]?.color || '#ffffff';
   }
   
-  start() {
+ start() {
     this.generateWorld();
     this.lastUpdateTime = Date.now();
     this.lastFrameTime = performance.now();
@@ -463,6 +464,28 @@ setPlayer(player) {
     // Trigger game start event
     const event = new CustomEvent('gameStart', { detail: { gameMode: this.gameMode } });
     this.canvas.dispatchEvent(event);
+  }
+	gameLoop() {
+    const currentTime = performance.now();
+    const deltaTime = (currentTime - this.lastFrameTime) / 1000;
+    this.lastFrameTime = currentTime;
+
+    // Update game state
+    this.update(deltaTime);
+
+    // Render game
+    this.render();
+
+    // Calculate FPS
+    this.frameCount++;
+    if (currentTime - this.fpsUpdateTime > 1000) {
+      this.fps = Math.round((this.frameCount * 1000) / (currentTime - this.fpsUpdateTime));
+      this.frameCount = 0;
+      this.fpsUpdateTime = currentTime;
+    }
+
+    // Schedule next frame
+    this.animationId = requestAnimationFrame(() => this.gameLoop());
   }
   
   showTutorial() {
@@ -930,7 +953,7 @@ keepEntityInBounds(entity) {
     }
   }
   
-  replenishViruses() {
+ replenishViruses() {
     const maxViruses = this.balanceSettings.virusMaxCount;
     const spawnRate = this.balanceSettings.virusSpawnRate;
     const targetVirusCount = Math.floor(maxViruses * spawnRate);
@@ -963,7 +986,7 @@ keepEntityInBounds(entity) {
     }
   }
   
-  replenishPowerUps() {
+ replenishPowerUps() {
     const maxPowerUps = this.balanceSettings.powerUpMaxCount;
     const spawnRate = this.balanceSettings.powerUpSpawnRate;
     const targetPowerUpCount = Math.floor(maxPowerUps * spawnRate);
