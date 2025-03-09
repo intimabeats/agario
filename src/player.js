@@ -7,15 +7,15 @@ export class Player {
   this.color = color || '#ff5252';
   this.game = game;
   
-  // Verificar se o jogo é válido
+  // Verify if game is valid
   if (!game) {
     console.error("Game object is missing in Player constructor");
   }
   
-  // Verificar se worldSize está definido
+  // Verify if worldSize is defined
   const worldSize = game && game.worldSize ? game.worldSize : 6000;
   
-  // Position and movement - Iniciar no centro do mapa
+  // Position and movement - Start at center of map
   this.x = worldSize / 2;
   this.y = worldSize / 2;
   this.targetX = this.x;
@@ -221,7 +221,7 @@ initCellMembranes() {
   });
 }
 
-  initCellMembrane(cell) {
+initCellMembrane(cell) {
   if (!cell) {
     console.error("Invalid cell for membrane initialization");
     return;
@@ -258,7 +258,7 @@ initCellMembranes() {
     }
   } catch (error) {
     console.error("Error initializing cell membrane:", error);
-    // Reiniciar a membrana com valores padrão
+    // Reset membrane with default values
     cell.membrane = {
       points: 20,
       elasticity: 0.3,
@@ -269,7 +269,7 @@ initCellMembranes() {
       vertices: []
     };
     
-    // Tentar novamente com a membrana reiniciada
+    // Try again with reset membrane
     for (let i = 0; i < cell.membrane.points; i++) {
       const angle = (i / cell.membrane.points) * Math.PI * 2;
       cell.membrane.vertices.push({
@@ -295,21 +295,21 @@ update(deltaTime) {
     return;
   }
   
-  // Verificar se as coordenadas são válidas antes de qualquer operação
+  // Verify if coordinates are valid before any operation
   if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
     console.error("Invalid coordinates detected in update:", this.x, this.y, this.targetX, this.targetY);
-    // Reiniciar coordenadas para valores válidos
+    // Reset coordinates to valid values
     if (this.game && this.game.worldSize) {
       this.x = this.game.worldSize / 2;
       this.y = this.game.worldSize / 2;
     } else {
-      this.x = 3000; // Valor padrão
-      this.y = 3000; // Valor padrão
+      this.x = 3000; // Default value
+      this.y = 3000; // Default value
     }
     this.targetX = this.x;
     this.targetY = this.y;
     
-    // Reiniciar células
+    // Reset cells
     if (this.cells && this.cells.length > 0) {
       this.cells.forEach(cell => {
         if (cell) {
@@ -322,10 +322,10 @@ update(deltaTime) {
     }
   }
   
-  // Verificar se as células são válidas
+  // Verify if cells are valid
   if (!this.cells || this.cells.length === 0) {
     console.error("No cells available in update");
-    // Criar uma célula padrão
+    // Create a default cell
     this.cells = [{
       x: this.x,
       y: this.y,
@@ -347,13 +347,13 @@ update(deltaTime) {
       effects: []
     }];
     
-    // Inicializar a membrana da célula
+    // Initialize the cell membrane
     if (typeof this.initCellMembranes === 'function') {
       this.initCellMembranes();
     }
   }
   
-  // Verificar cada célula individualmente
+  // Verify each cell individually
   this.cells = this.cells.filter(cell => {
     if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius) || isNaN(cell.mass)) {
       console.error("Invalid cell detected, removing:", cell);
@@ -362,7 +362,7 @@ update(deltaTime) {
     return true;
   });
   
-  // Se todas as células foram removidas, criar uma nova
+  // If all cells were removed, create a new one
   if (this.cells.length === 0) {
     console.error("All cells were invalid, creating a new one");
     this.cells.push({
@@ -386,7 +386,7 @@ update(deltaTime) {
       effects: []
     });
     
-    // Inicializar a membrana da célula
+    // Initialize the cell membrane
     if (typeof this.initCellMembranes === 'function') {
       this.initCellMembranes();
     }
@@ -501,14 +501,14 @@ updateCellMembranes(deltaTime) {
     
     const { membrane } = cell;
     
-    // Verificar se a fase é válida
+    // Verify if phase is valid
     if (isNaN(membrane.phase)) {
       membrane.phase = 0;
     }
     
     membrane.phase += (membrane.oscillationSpeed || 1.5) * deltaTime;
     
-    // Verificar se os vértices existem
+    // Verify if vertices exist
     if (!membrane.vertices || !Array.isArray(membrane.vertices)) {
       console.error("Invalid membrane vertices:", membrane.vertices);
       this.initCellMembrane(cell);
@@ -518,12 +518,12 @@ updateCellMembranes(deltaTime) {
     membrane.vertices.forEach(vertex => {
       if (!vertex) return;
       
-      // Verificar se os valores são válidos
+      // Verify if values are valid
       if (isNaN(vertex.angle) || isNaN(vertex.baseX) || isNaN(vertex.baseY) || 
           isNaN(vertex.distortionX) || isNaN(vertex.distortionY) || 
           isNaN(vertex.velocityX) || isNaN(vertex.velocityY)) {
         
-        // Reiniciar o vértice com valores padrão
+        // Reset vertex with default values
         const angle = Math.random() * Math.PI * 2;
         vertex.angle = angle;
         vertex.baseX = Math.cos(angle);
@@ -598,21 +598,21 @@ updateCellMembranes(deltaTime) {
   }
 // Correção completa do arquivo player.js - Função moveTowardsTarget
 moveTowardsTarget(deltaTime) {
-  // Verificar se as coordenadas são válidas
+  // Verify if coordinates are valid
   if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
     console.error("Invalid coordinates detected:", this.x, this.y, this.targetX, this.targetY);
-    // Reiniciar coordenadas para valores válidos
+    // Reset coordinates to valid values
     if (this.game && this.game.worldSize) {
       this.x = this.game.worldSize / 2;
       this.y = this.game.worldSize / 2;
     } else {
-      this.x = 3000; // Valor padrão
-      this.y = 3000; // Valor padrão
+      this.x = 3000; // Default value
+      this.y = 3000; // Default value
     }
     this.targetX = this.x;
     this.targetY = this.y;
     
-    // Reiniciar células
+    // Reset cells
     if (this.cells && this.cells.length > 0) {
       this.cells.forEach(cell => {
         cell.x = this.x;
@@ -625,7 +625,7 @@ moveTowardsTarget(deltaTime) {
     return;
   }
   
-  // Verificar se há células
+  // Verify if there are cells
   if (!this.cells || this.cells.length === 0) {
     console.error("No cells to move");
     return;
@@ -633,16 +633,16 @@ moveTowardsTarget(deltaTime) {
   
   // Calculate movement for each cell with improved physics
   this.cells.forEach((cell, index) => {
-    // Verificar se a célula é válida
+    // Verify if cell is valid
     if (!cell) {
       console.error("Invalid cell at index", index);
       return;
     }
     
-    // Verificar se as coordenadas da célula são válidas
+    // Verify if cell coordinates are valid
     if (isNaN(cell.x) || isNaN(cell.y)) {
       console.error("Invalid cell coordinates:", cell.x, cell.y);
-      // Reiniciar coordenadas da célula
+      // Reset cell coordinates
       cell.x = this.x;
       cell.y = this.y;
       cell.velocityX = 0;
@@ -650,7 +650,7 @@ moveTowardsTarget(deltaTime) {
       return;
     }
     
-    // Verificar se o raio da célula é válido
+    // Verify if cell radius is valid
     if (isNaN(cell.radius) || cell.radius <= 0) {
       console.error("Invalid cell radius:", cell.radius);
       cell.radius = this.baseRadius;
@@ -661,7 +661,7 @@ moveTowardsTarget(deltaTime) {
     const dx = this.targetX - cell.x;
     const dy = this.targetY - cell.y;
     
-    // Verificar se dx e dy são válidos
+    // Verify if dx and dy are valid
     if (isNaN(dx) || isNaN(dy)) {
       console.error("Invalid dx or dy:", dx, dy);
       return;
@@ -669,7 +669,7 @@ moveTowardsTarget(deltaTime) {
     
     const distance = Math.sqrt(dx * dx + dy * dy);
     
-    // Verificar se a distância é válida
+    // Verify if distance is valid
     if (isNaN(distance)) {
       console.error("Invalid distance:", distance);
       return;
@@ -680,7 +680,7 @@ moveTowardsTarget(deltaTime) {
       const sizeSpeedFactor = Math.max(0.6, Math.min(2, 40 / cell.radius));
       const moveSpeed = this.speed * sizeSpeedFactor;
       
-      // Verificar se a velocidade é válida
+      // Verify if speed is valid
       if (isNaN(moveSpeed)) {
         console.error("Invalid move speed:", moveSpeed, this.speed, sizeSpeedFactor);
         return;
@@ -690,7 +690,7 @@ moveTowardsTarget(deltaTime) {
       const targetVelocityX = (dx / distance) * moveSpeed;
       const targetVelocityY = (dy / distance) * moveSpeed;
       
-      // Verificar se as velocidades alvo são válidas
+      // Verify if target velocities are valid
       if (isNaN(targetVelocityX) || isNaN(targetVelocityY)) {
         console.error("Invalid target velocity:", targetVelocityX, targetVelocityY);
         return;
@@ -700,7 +700,7 @@ moveTowardsTarget(deltaTime) {
       if (cell.velocityX === undefined) cell.velocityX = 0;
       if (cell.velocityY === undefined) cell.velocityY = 0;
       
-      // Verificar se as velocidades atuais são válidas
+      // Verify if current velocities are valid
       if (isNaN(cell.velocityX) || isNaN(cell.velocityY)) {
         console.error("Invalid current velocity:", cell.velocityX, cell.velocityY);
         cell.velocityX = 0;
@@ -711,7 +711,7 @@ moveTowardsTarget(deltaTime) {
       const newVelocityX = cell.velocityX + (targetVelocityX - cell.velocityX) * this.acceleration;
       const newVelocityY = cell.velocityY + (targetVelocityY - cell.velocityY) * this.acceleration;
       
-      // Verificar se as novas velocidades são válidas
+      // Verify if new velocities are valid
       if (isNaN(newVelocityX) || isNaN(newVelocityY)) {
         console.error("Invalid new velocity:", newVelocityX, newVelocityY);
         return;
@@ -724,7 +724,7 @@ moveTowardsTarget(deltaTime) {
       const newX = cell.x + cell.velocityX * deltaTime;
       const newY = cell.y + cell.velocityY * deltaTime;
       
-      // Verificar se as novas coordenadas são válidas
+      // Verify if new coordinates are valid
       if (isNaN(newX) || isNaN(newY)) {
         console.error("Invalid new position:", newX, newY);
         return;
@@ -738,7 +738,7 @@ moveTowardsTarget(deltaTime) {
         cell.x = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.x));
         cell.y = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.y));
       } else {
-        // Usar valores padrão se worldSize não estiver disponível
+        // Use default values if worldSize is not available
         cell.x = Math.max(cell.radius, Math.min(6000 - cell.radius, cell.x));
         cell.y = Math.max(cell.radius, Math.min(6000 - cell.radius, cell.y));
       }
@@ -762,14 +762,14 @@ updateCenterOfMass() {
   let totalY = 0;
   let totalMass = 0;
   
-  // Verificar se há células
+  // Verify if there are cells
   if (!this.cells || this.cells.length === 0) {
     console.error("No cells to calculate center of mass");
     return;
   }
   
   this.cells.forEach(cell => {
-    // Verificar se as coordenadas e massa da célula são válidas
+    // Verify if cell coordinates and mass are valid
     if (isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
       console.error("Invalid cell data for center of mass calculation:", cell.x, cell.y, cell.mass);
       return;
@@ -780,7 +780,7 @@ updateCenterOfMass() {
     totalMass += cell.mass;
   });
   
-  // Evitar divisão por zero
+  // Avoid division by zero
   if (totalMass <= 0) {
     console.error("Total mass is zero or negative:", totalMass);
     return;
@@ -789,11 +789,11 @@ updateCenterOfMass() {
   this.x = totalX / totalMass;
   this.y = totalY / totalMass;
   
-  // Verificar se as coordenadas calculadas são válidas
+  // Verify if calculated coordinates are valid
   if (isNaN(this.x) || isNaN(this.y)) {
     console.error("Invalid center of mass calculated:", totalX, totalY, totalMass);
     
-    // Usar a posição da primeira célula como fallback
+    // Use the position of the first cell as fallback
     if (this.cells.length > 0) {
       this.x = this.cells[0].x;
       this.y = this.cells[0].y;
@@ -801,8 +801,8 @@ updateCenterOfMass() {
       this.x = this.game.worldSize / 2;
       this.y = this.game.worldSize / 2;
     } else {
-      this.x = 3000; // Valor padrão
-      this.y = 3000; // Valor padrão
+      this.x = 3000; // Default value
+      this.y = 3000; // Default value
     }
   }
 }
@@ -929,7 +929,9 @@ checkVirusCollisions(viruses) {
             }
             
             // Play sound
-            this.game.soundManager.playSound('virusSplit');
+            if (this.game.soundManager) {
+              this.game.soundManager.playSound('virusSplit');
+            }
             
             // Add notification
             this.addNotification('Virus consumed!', '#33ff33');
@@ -938,7 +940,7 @@ checkVirusCollisions(viruses) {
             this.game.removeVirus(virus);
           }
         } 
-        // Verificação corrigida: Não usar canPassUnder, verificar diretamente o tamanho
+        // Verification corrected: Don't use canPassUnder, directly check the size
         else if (cell.radius < virus.radius * 0.9) {
           // Smaller cells pass under the virus
           cell.z = -1;

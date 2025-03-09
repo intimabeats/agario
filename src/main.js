@@ -237,16 +237,16 @@ function initGame() {
   // Create new game instance
   game = new Game(canvas);
   
-  // Verificar se o jogo foi criado corretamente
+  // Verify if game was created correctly
   if (!game) {
     console.error('Failed to create game instance!');
     return;
   }
   
-  // Verificar se worldSize está definido
+  // Verify if worldSize is defined
   if (!game.worldSize) {
     console.error('worldSize is undefined. Setting default value.');
-    game.worldSize = 6000; // Valor padrão
+    game.worldSize = 6000; // Default value
   }
   
   game.gameMode = selectedGameMode;
@@ -257,7 +257,7 @@ function initGame() {
   // Create player
   const player = new Player(playerName, selectedColor, game);
   
-  // Verificar se o jogador foi criado corretamente
+  // Verify if player was created correctly
   if (!player) {
     console.error('Failed to create player instance!');
     return;
@@ -299,7 +299,7 @@ function initGame() {
   // Track player eaten events
   trackPlayerEaten();
   
-  // Adicionar log para debug
+  // Add log for debug
   console.log("Game initialized, player position:", player.x, player.y);
   console.log("Player target:", player.targetX, player.targetY);
   console.log("Game worldSize:", game.worldSize);

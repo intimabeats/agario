@@ -362,10 +362,10 @@ setPlayer(player) {
   
   this.player = player;
   
-  // Verificar se worldSize está definido
+  // Verify if worldSize is defined
   if (!this.worldSize) {
     console.error("worldSize is undefined in setPlayer. Using default value.");
-    this.worldSize = 6000; // Valor padrão
+    this.worldSize = 6000; // Default value
   }
   
   // Ensure player's initial position is valid and centered in the world
@@ -810,10 +810,10 @@ update(deltaTime) {
 keepEntityInBounds(entity) {
   if (!entity) return;
   
-  // Verificar se worldSize está definido
+  // Verify if worldSize is defined
   if (!this.worldSize) {
     console.error("worldSize is undefined in keepEntityInBounds. Using default value.");
-    this.worldSize = 6000; // Valor padrão
+    this.worldSize = 6000; // Default value
   }
   
   // Keep entity position within world bounds
