@@ -1,4 +1,3 @@
-
 import { Food } from './food.js';
 import { AI } from './ai.js';
 import { Virus } from './virus.js';
@@ -830,4 +829,776 @@ export class Game {
     
     // Remove power-ups
     if (this.removalQueues.powerUps.length > 0) {
-      this.powerUps = this.power
+            this.powerUps = this.powerUps.filter(powerUp => !this.removalQueues.powerUps.includes(powerUp));
+      this.removalQueues.powerUps = [];
+    }
+    
+    // Remove AIs
+    if (this.removalQueues.ais.length > 0) {
+      this.ais = this.ais.filter(ai => !this.removalQueues.ais.includes(ai));
+      this.removalQueues.ais = [];
+    }
+  }
+  
+  updateBattleRoyale(deltaTime) {
+    if (!this.battleRoyaleState.active) return;
+    
+    const now = Date.now();
+    
+    // Check if it's time to shrink the zone
+    if (now >= this.battleRoyaleState.nextShrinkTime) {
+      // Start shrinking
+      this.battleRoyaleState.shrinkStartTime = now;
+      this.battleRoyaleState.nextShrinkTime = now + this.battleRoyaleState.shrinkDuration + 30000; // Next shrink after 30 seconds
+      
+      // Calculate new target radius
+      const currentRadius = this.battleRoyaleState.safeZoneRadius;
+      const newRadius = Math.max(this.battleRoyaleState.minRadius, currentRadius * 0.7);
+      
+      // Store target radius
+      this.battleRoyaleState.targetRadius = newRadius;
+      
+      // Play shrink sound
+      this.soundManager.playSound('battleRoyaleShrink');
+      
+      // Show announcement
+      this.showAnnouncement('Safe zone is shrinking!', 3000);
+    }
+    // Check if we need to show warning
+    else if (!this.battleRoyaleState.isWarning && now >= this.battleRoyaleState.nextShrinkTime - this.battleRoyaleState.warningTime) {
+      // Show warning
+      this.battleRoyaleState.isWarning = true;
+      
+      // Play warning sound
+      this.soundManager.playSound('battleRoyaleWarning');
+      
+      // Show announcement
+      this.showAnnouncement('Safe zone will shrink soon!', 3000);
+    }
+    
+    // Update shrinking
+    if (this.battleRoyaleState.shrinkStartTime > 0) {
+      const elapsed = now - this.battleRoyaleState.shrinkStartTime;
+      
+      if (elapsed < this.battleRoyaleState.shrinkDuration) {
+        // Calculate progress (0-1)
+        const progress = elapsed / this.battleRoyaleState.shrinkDuration;
+        
+        // Update radius
+        const startRadius = this.battleRoyaleState.safeZoneRadius;
+        const targetRadius = this.battleRoyaleState.targetRadius;
+        this.battleRoyaleState.safeZoneRadius = startRadius - (startRadius - targetRadius) * progress;
+      } else {
+        // Shrinking complete
+        this.battleRoyaleState.safeZoneRadius = this.battleRoyaleState.targetRadius;
+        this.battleRoyaleState.shrinkStartTime = 0;
+        this.battleRoyaleState.isWarning = false;
+      }
+    }
+    
+    // Check for game end
+    if (this.player && !this.player.isDead) {
+      // Count alive AIs
+      const aliveAIs = this.ais.filter(ai => !ai.isDead);
+      
+      // If player is the only one left, they win
+      if (aliveAIs.length === 0) {
+        this.handleBattleRoyaleWin();
+      }
+    }
+  }
+  
+  startBattleRoyale() {
+    this.battleRoyaleState.active = true;
+    this.battleRoyaleState.safeZoneRadius = this.worldSize / 2;
+    this.battleRoyaleState.safeZoneX = this.worldSize / 2;
+    this.battleRoyaleState.safeZoneY = this.worldSize / 2;
+    this.battleRoyaleState.shrinkStartTime = 0;
+    this.battleRoyaleState.nextShrinkTime = Date.now() + 30000; // First shrink after 30 seconds
+    
+    // Play start sound
+    this.soundManager.playSound('battleRoyaleStart');
+    
+    // Show announcement
+    this.showAnnouncement('Battle Royale has begun!', 3000);
+  }
+  
+  handleBattleRoyaleWin() {
+    // Show win announcement
+    this.showAnnouncement('Victory Royale!', 5000);
+    
+    // Unlock achievement
+    if (this.achievements) {
+      this.achievements.unlock('battle_royale_win');
+    }
+    
+    // Add bonus score
+    if (this.player) {
+      this.player.score += 10000;
+      this.player.addExperience(5000);
+    }
+    
+    // End game after a delay
+    setTimeout(() => {
+      this.handleGameOver();
+    }, 5000);
+  }
+  
+  updateTeamScores() {
+    // Reset team scores
+    Object.keys(this.teams).forEach(team => {
+      this.teams[team].score = 0;
+    });
+    
+    // Add player score to team
+    if (this.player && !this.player.isDead && this.player.team) {
+      this.teams[this.player.team].score += this.player.score;
+    }
+    
+    // Add AI scores to teams
+    this.ais.forEach(ai => {
+      if (!ai.isDead && ai.team) {
+        this.teams[ai.team].score += ai.score;
+      }
+    });
+    
+    // Check for team victory
+    const teamScores = Object.entries(this.teams).map(([team, data]) => ({
+      team,
+      score: data.score
+    }));
+    
+    // Sort by score (descending)
+    teamScores.sort((a, b) => b.score - a.score);
+    
+    // If top team has 2x the score of the second team and score > 100000, they win
+    if (teamScores.length >= 2 && 
+        teamScores[0].score > 100000 && 
+        teamScores[0].score > teamScores[1].score * 2) {
+      this.handleTeamVictory(teamScores[0].team);
+    }
+  }
+  
+  handleTeamVictory(winningTeam) {
+    // Show victory announcement
+    this.showAnnouncement(`Team ${winningTeam} wins!`, 5000);
+    
+    // Unlock achievement if player is on winning team
+    if (this.achievements && this.player && this.player.team === winningTeam) {
+      this.achievements.unlock('team_victory');
+    }
+    
+    // End game after a delay
+    setTimeout(() => {
+      this.handleGameOver();
+    }, 5000);
+  }
+  
+  updateSpatialGrid() {
+    // Clear grid
+    this.spatialGrid = {};
+    
+    // Add entities to grid
+    this.addEntitiesToGrid(this.foods, 'foods');
+    this.addEntitiesToGrid(this.viruses, 'viruses');
+    this.addEntitiesToGrid(this.powerUps, 'powerUps');
+    
+    // Add player cells to grid
+    if (this.player && !this.player.isDead) {
+      this.player.cells.forEach(cell => {
+        this.addEntityToGrid(cell.x, cell.y, cell.radius, { type: 'player', cell, parent: this.player });
+      });
+    }
+    
+    // Add AI cells to grid
+    this.ais.forEach(ai => {
+      if (!ai.isDead) {
+        ai.cells.forEach(cell => {
+          this.addEntityToGrid(cell.x, cell.y, cell.radius, { type: 'ai', cell, parent: ai });
+        });
+      }
+    });
+  }
+  
+  addEntitiesToGrid(entities, type) {
+    entities.forEach(entity => {
+      this.addEntityToGrid(entity.x, entity.y, entity.radius, { type, ...entity });
+    });
+  }
+  
+  addEntityToGrid(x, y, radius, entity) {
+    // Calculate grid cell coordinates
+    const cellX = Math.floor(x / this.gridCellSize);
+    const cellY = Math.floor(y / this.gridCellSize);
+    
+    // Add to grid cells that this entity overlaps
+    for (let i = -1; i <= 1; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const gridX = cellX + i;
+        const gridY = cellY + j;
+        
+        // Skip invalid grid cells
+        if (gridX < 0 || gridY < 0 || 
+            gridX >= Math.ceil(this.worldSize / this.gridCellSize) || 
+            gridY >= Math.ceil(this.worldSize / this.gridCellSize)) {
+          continue;
+        }
+        
+        const cellKey = `${gridX},${gridY}`;
+        
+        if (!this.spatialGrid[cellKey]) {
+          this.spatialGrid[cellKey] = [];
+        }
+        
+        this.spatialGrid[cellKey].push(entity);
+      }
+    }
+  }
+  
+  getEntitiesInRange(x, y, radius, types) {
+    // Calculate grid cell coordinates
+    const cellX = Math.floor(x / this.gridCellSize);
+    const cellY = Math.floor(y / this.gridCellSize);
+    
+    // Calculate how many cells to check in each direction
+    const cellRadius = Math.ceil(radius / this.gridCellSize);
+    
+    // Initialize result
+    const result = {};
+    types.forEach(type => {
+      result[type] = [];
+    });
+    
+    // Check grid cells in range
+    for (let i = -cellRadius; i <= cellRadius; i++) {
+      for (let j = -cellRadius; j <= cellRadius; j++) {
+        const gridX = cellX + i;
+        const gridY = cellY + j;
+        
+        // Skip invalid grid cells
+        if (gridX < 0 || gridY < 0 || 
+            gridX >= Math.ceil(this.worldSize / this.gridCellSize) || 
+            gridY >= Math.ceil(this.worldSize / this.gridCellSize)) {
+          continue;
+        }
+        
+        const cellKey = `${gridX},${gridY}`;
+        
+        // Skip empty cells
+        if (!this.spatialGrid[cellKey]) continue;
+        
+        // Check entities in this cell
+        this.spatialGrid[cellKey].forEach(entity => {
+          if (types.includes(entity.type)) {
+            // Calculate distance
+            const dx = entity.x - x;
+            const dy = entity.y - y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // Add if in range
+            if (distance <= radius + entity.radius) {
+              result[entity.type].push(entity);
+            }
+          }
+        });
+      }
+    }
+    
+    return result;
+  }
+  
+updateVisibleEntities() {
+  // Calculate viewport bounds
+  const viewportBounds = this.getViewportBounds();
+  
+  // Update visible entities
+  this.visibleEntities.foods = this.foods.filter(food => {
+    // Check if food has checkVisibility method, otherwise use isInViewport
+    if (typeof food.checkVisibility === 'function') {
+      return food.checkVisibility(viewportBounds);
+    } else {
+      return this.isInViewport(food.x, food.y, food.radius, viewportBounds);
+    }
+  });
+  
+  this.visibleEntities.viruses = this.viruses.filter(virus => {
+    if (typeof virus.checkVisibility === 'function') {
+      return virus.checkVisibility(viewportBounds);
+    } else {
+      return this.isInViewport(virus.x, virus.y, virus.radius, viewportBounds);
+    }
+  });
+  
+  this.visibleEntities.powerUps = this.powerUps.filter(powerUp => {
+    if (typeof powerUp.checkVisibility === 'function') {
+      return powerUp.checkVisibility(viewportBounds);
+    } else {
+      return this.isInViewport(powerUp.x, powerUp.y, powerUp.radius, viewportBounds);
+    }
+  });
+  
+  // Update visible AIs
+  this.visibleEntities.ais = [];
+  this.ais.forEach(ai => {
+    if (!ai.isDead) {
+      let isVisible = false;
+      
+      // Check if any cell is visible
+      ai.cells.forEach(cell => {
+        if (this.isInViewport(cell.x, cell.y, cell.radius, viewportBounds)) {
+          isVisible = true;
+        }
+      });
+      
+      if (isVisible) {
+        this.visibleEntities.ais.push(ai);
+      }
+    }
+  });
+}
+
+  
+  getViewportBounds() {
+    const halfWidth = this.width / (2 * this.camera.scale);
+    const halfHeight = this.height / (2 * this.camera.scale);
+    
+    return {
+      left: this.camera.x - halfWidth,
+      right: this.camera.x + halfWidth,
+      top: this.camera.y - halfHeight,
+      bottom: this.camera.y + halfHeight
+    };
+  }
+  
+  isInViewport(x, y, radius, viewportBounds) {
+    const { left, right, top, bottom } = viewportBounds || this.getViewportBounds();
+    
+    return (
+      x + radius > left &&
+      x - radius < right &&
+      y + radius > top &&
+      y - radius < bottom
+    );
+  }
+  
+  centerCamera() {
+    if (!this.player) return;
+    
+    // Calculate target camera position (center of mass of player cells)
+    let totalX = 0;
+    let totalY = 0;
+    let totalMass = 0;
+    
+    this.player.cells.forEach(cell => {
+      totalX += cell.x * cell.mass;
+      totalY += cell.y * cell.mass;
+      totalMass += cell.mass;
+    });
+    
+    const targetX = totalX / totalMass;
+    const targetY = totalY / totalMass;
+    
+    // Smooth camera movement
+    this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
+    this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
+    
+    // Calculate camera scale based on player size
+    const largestCell = this.player.cells.reduce((largest, cell) => 
+      cell.radius > largest.radius ? cell : largest, this.player.cells[0]);
+    
+    // Scale inversely with player size, but with limits
+    const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestCell.radius));
+    
+    // Smooth scale transition
+    this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
+    
+    // Keep camera within world bounds
+    this.camera.x = Math.max(this.cameraBounds.minX, Math.min(this.cameraBounds.maxX, this.camera.x));
+    this.camera.y = Math.max(this.cameraBounds.minY, Math.min(this.cameraBounds.maxY, this.camera.y));
+  }
+  
+  render() {
+    // Performance measurement
+    const renderStart = performance.now();
+    
+    // Clear canvas
+    this.ctx.clearRect(0, 0, this.width, this.height);
+    
+    // Save context
+    this.ctx.save();
+    
+    // Apply camera transform
+    this.ctx.translate(this.width / 2, this.height / 2);
+    this.ctx.scale(this.camera.scale, this.camera.scale);
+    this.ctx.translate(-this.camera.x, -this.camera.y);
+    
+    // Draw background grid
+    this.drawBackground();
+    
+    // Draw battle royale safe zone if active
+    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
+      this.drawBattleRoyaleSafeZone();
+    }
+    
+    // Draw entities
+    this.drawEntities();
+    
+    // Draw particles
+    this.particles.draw(this.ctx);
+    
+    // Restore context
+    this.ctx.restore();
+    
+    // Draw UI elements
+    this.drawUI();
+    
+    // Update performance stats
+    this.stats.renderTime = performance.now() - renderStart;
+  }
+  
+  drawBackground() {
+    // Calculate visible area
+    const viewportBounds = this.getViewportBounds();
+    const { left, right, top, bottom } = viewportBounds;
+    
+    // Align to grid
+    const startX = Math.floor(left / this.gridSize) * this.gridSize;
+    const startY = Math.floor(top / this.gridSize) * this.gridSize;
+    const endX = Math.ceil(right / this.gridSize) * this.gridSize;
+    const endY = Math.ceil(bottom / this.gridSize) * this.gridSize;
+    
+    // Draw background
+    this.ctx.fillStyle = '#f8f8f8';
+    this.ctx.fillRect(startX, startY, endX - startX, endY - startY);
+    
+    // Draw grid
+    this.ctx.strokeStyle = '#e0e0e0';
+    this.ctx.lineWidth = 1;
+    
+    // Vertical lines
+    for (let x = startX; x <= endX; x += this.gridSize) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(x, startY);
+      this.ctx.lineTo(x, endY);
+      this.ctx.stroke();
+    }
+    
+    // Horizontal lines
+    for (let y = startY; y <= endY; y += this.gridSize) {
+      this.ctx.beginPath();
+      this.ctx.moveTo(startX, y);
+      this.ctx.lineTo(endX, y);
+      this.ctx.stroke();
+    }
+    
+    // Draw world border
+    this.ctx.strokeStyle = '#ff0000';
+    this.ctx.lineWidth = 10;
+    this.ctx.strokeRect(0, 0, this.worldSize, this.worldSize);
+  }
+  
+  drawBattleRoyaleSafeZone() {
+    const { safeZoneX, safeZoneY, safeZoneRadius, isWarning } = this.battleRoyaleState;
+    
+    // Draw danger zone
+    this.ctx.fillStyle = 'rgba(255, 0, 0, 0.1)';
+    this.ctx.beginPath();
+    this.ctx.rect(0, 0, this.worldSize, this.worldSize);
+    this.ctx.arc(safeZoneX, safeZoneY, safeZoneRadius, 0, Math.PI * 2, true);
+    this.ctx.fill();
+    
+    // Draw safe zone border
+    this.ctx.strokeStyle = isWarning ? 
+      'rgba(255, 0, 0, ' + (0.5 + 0.5 * Math.sin(Date.now() / 200)) + ')' : 
+      'rgba(0, 200, 255, 0.8)';
+    this.ctx.lineWidth = 5;
+    this.ctx.beginPath();
+    this.ctx.arc(safeZoneX, safeZoneY, safeZoneRadius, 0, Math.PI * 2);
+    this.ctx.stroke();
+    
+    // Draw pulsing effect if warning
+    if (isWarning) {
+      this.ctx.strokeStyle = 'rgba(255, 0, 0, ' + (0.2 + 0.2 * Math.sin(Date.now() / 100)) + ')';
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.arc(safeZoneX, safeZoneY, safeZoneRadius + 5 + 5 * Math.sin(Date.now() / 200), 0, Math.PI * 2);
+      this.ctx.stroke();
+    }
+  }
+  
+  drawEntities() {
+    // Reset entity count
+    this.stats.entitiesRendered = 0;
+    
+    // Draw food
+    this.visibleEntities.foods.forEach(food => {
+      food.draw(this.ctx);
+      this.stats.entitiesRendered++;
+    });
+    
+    // Draw power-ups
+    this.visibleEntities.powerUps.forEach(powerUp => {
+      powerUp.draw(this.ctx);
+      this.stats.entitiesRendered++;
+    });
+    
+    // Collect all cells for z-index sorting
+    const allCells = [];
+    
+    // Add player cells
+    if (this.player && !this.player.isDead) {
+      this.player.cells.forEach(cell => {
+        allCells.push({ entity: this.player, cell, z: cell.z || 0 });
+      });
+    }
+    
+    // Add AI cells
+    this.visibleEntities.ais.forEach(ai => {
+      ai.cells.forEach(cell => {
+        allCells.push({ entity: ai, cell, z: cell.z || 0 });
+      });
+    });
+    
+    // Add viruses
+    this.visibleEntities.viruses.forEach(virus => {
+      allCells.push({ entity: virus, cell: null, z: virus.z || 5 });
+    });
+    
+    // Sort by z-index
+    allCells.sort((a, b) => a.z - b.z);
+    
+    // Draw cells in order
+    allCells.forEach(item => {
+      if (item.entity === this.player || this.visibleEntities.ais.includes(item.entity)) {
+        item.entity.draw(this.ctx);
+      } else if (this.visibleEntities.viruses.includes(item.entity)) {
+        item.entity.draw(this.ctx);
+      }
+      this.stats.entitiesRendered++;
+    });
+  }
+  
+  drawUI() {
+    // Draw minimap
+    this.miniMap.update(1/60); // Update with fixed time step
+    this.miniMap.draw(this.ctx);
+    
+    // Draw debug info if enabled
+    if (this.debugMode) {
+      this.drawDebugInfo();
+    }
+  }
+  
+  drawDebugInfo() {
+    this.ctx.font = '12px Arial';
+    this.ctx.fillStyle = 'black';
+    this.ctx.textAlign = 'left';
+    
+    const debugInfo = [
+      `FPS: ${this.fps}`,
+      `Entities: ${this.stats.entitiesRendered}`,
+      `Update: ${this.stats.updateTime.toFixed(2)}ms`,
+      `Render: ${this.stats.renderTime.toFixed(2)}ms`,
+      `AI: ${this.stats.aiTime.toFixed(2)}ms`,
+      `Foods: ${this.foods.length}`,
+      `AIs: ${this.ais.length}`,
+      `Viruses: ${this.viruses.length}`,
+      `PowerUps: ${this.powerUps.length}`,
+      `Particles: ${this.particles.particles.length}`,
+      `Camera: (${this.camera.x.toFixed(0)}, ${this.camera.y.toFixed(0)}, ${this.camera.scale.toFixed(2)})`
+    ];
+    
+    debugInfo.forEach((info, index) => {
+      this.ctx.fillText(info, 10, 20 + index * 15);
+    });
+  }
+  
+  handleGameOver(data) {
+    if (this.isGameOver) return;
+    
+    this.isGameOver = true;
+    
+    // Update UI
+    const gameOverElement = document.getElementById('game-over');
+    const gameUIElement = document.getElementById('game-ui');
+    
+    if (gameOverElement) {
+      gameOverElement.style.display = 'block';
+    }
+    
+    if (gameUIElement) {
+      gameUIElement.style.display = 'none';
+    }
+    
+    // Update final stats
+    const finalScoreElement = document.getElementById('final-score');
+    const finalLevelElement = document.getElementById('final-level');
+    const timeSurvivedElement = document.getElementById('time-survived');
+    const playersEatenElement = document.getElementById('players-eaten');
+    
+    if (finalScoreElement && this.player) {
+      finalScoreElement.textContent = Math.floor(this.player.score);
+    }
+    
+    if (finalLevelElement && this.player) {
+      finalLevelElement.textContent = this.player.level;
+    }
+    
+    if (timeSurvivedElement) {
+      const minutes = Math.floor(this.gameTime / 60);
+      const seconds = Math.floor(this.gameTime % 60);
+      timeSurvivedElement.textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+    
+    if (playersEatenElement && this.player) {
+      playersEatenElement.textContent = this.player.stats.playersEaten;
+    }
+    
+    // Play game over sound
+    this.soundManager.playSound('gameOver');
+    
+    // Stop game loop
+    if (this.animationId) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+  }
+  
+  removeFood(food) {
+    this.removalQueues.foods.push(food);
+  }
+  
+  removeVirus(virus) {
+    this.removalQueues.viruses.push(virus);
+  }
+  
+  removePowerUp(powerUp) {
+    this.removalQueues.powerUps.push(powerUp);
+  }
+  
+  removeAI(ai) {
+    this.removalQueues.ais.push(ai);
+  }
+  
+  getLeaderboard() {
+    const leaders = [];
+    
+    // Add player if not dead
+    if (this.player && !this.player.isDead) {
+      leaders.push({
+        id: 'player',
+        name: this.player.name,
+        score: this.player.score,
+        team: this.player.team
+      });
+    }
+    
+    // Add AI players
+    this.ais.forEach(ai => {
+      if (!ai.isDead) {
+        leaders.push({
+          id: ai.id,
+          name: ai.name,
+          score: ai.score,
+          team: ai.team
+        });
+      }
+    });
+    
+    // Sort by score (descending)
+    leaders.sort((a, b) => b.score - a.score);
+    
+    // Return top 10
+    return leaders.slice(0, 10);
+  }
+  
+  updateViewport() {
+    if (this.canvas) {
+      this.canvas.width = window.innerWidth;
+      this.canvas.height = window.innerHeight;
+      this.width = this.canvas.width;
+      this.height = this.canvas.height;
+      
+      // Update minimap size based on screen size
+      this.miniMap.resize();
+    }
+  }
+  
+  showAnnouncement(message, duration = 3000) {
+    const announcementElement = document.getElementById('game-announcement');
+    if (!announcementElement) return;
+    
+    // Set message
+    announcementElement.textContent = message;
+    
+    // Show announcement
+    announcementElement.style.opacity = '1';
+    
+    // Hide after duration
+    setTimeout(() => {
+      announcementElement.style.opacity = '0';
+    }, duration);
+  }
+  
+  reset() {
+    // Reset game state
+    this.isGameOver = false;
+    this.isPaused = false;
+    this.gameTime = 0;
+    
+    // Clear entities
+    this.foods = [];
+    this.ais = [];
+    this.viruses = [];
+    this.powerUps = [];
+    
+    // Reset battle royale state
+    this.battleRoyaleState.active = false;
+    
+    // Reset teams
+    Object.keys(this.teams).forEach(team => {
+      this.teams[team].score = 0;
+      this.teams[team].players = [];
+    });
+    
+    // Reset player if exists
+    if (this.player) {
+      this.player.reset();
+    }
+    
+    // Regenerate world
+    this.generateWorld();
+    
+    // Reset camera
+    this.camera.scale = 1;
+    this.centerCamera();
+    
+    // Reset particles
+    this.particles.particles = [];
+    
+    // Reset stats
+    this.stats = {
+      fps: 0,
+      frameCount: 0,
+      lastFpsUpdate: 0,
+      entitiesRendered: 0,
+      collisionsChecked: 0,
+      updateTime: 0,
+      renderTime: 0,
+      physicsTime: 0,
+      aiTime: 0
+    };
+    
+    // Reset UI
+    const gameOverElement = document.getElementById('game-over');
+    const gameUIElement = document.getElementById('game-ui');
+    
+    if (gameOverElement) {
+      gameOverElement.style.display = 'none';
+    }
+    
+    if (gameUIElement) {
+      gameUIElement.style.display = 'block';
+    }
+  }
+}

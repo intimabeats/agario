@@ -615,18 +615,18 @@ export class Food {
   }
   
   // Check if food is in viewport
-  checkVisibility(viewportBounds) {
-    const { left, right, top, bottom } = viewportBounds;
-    
-    this.isVisible = (
-      this.x + this.radius > left &&
-      this.x - this.radius < right &&
-      this.y + this.radius > top &&
-      this.y - this.radius < bottom
-    );
-    
-    return this.isVisible;
-  }
+checkVisibility(viewportBounds) {
+  const { left, right, top, bottom } = viewportBounds;
+  
+  this.isVisible = (
+    this.x + this.radius > left &&
+    this.x - this.radius < right &&
+    this.y + this.radius > top &&
+    this.y - this.radius < bottom
+  );
+  
+  return this.isVisible;
+}
   
   // Apply magnet effect (used by player/AI with magnet power-up)
   applyMagnetEffect(sourceX, sourceY, strength) {

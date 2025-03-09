@@ -1503,31 +1503,33 @@ export class Player {
     this.checkLevelUp();
   }
   
-  checkLevelUp() {
-    if (this.experience >= this.experienceToNextLevel) {
-      this.level++;
-      
-      // Update highest level stat
-      if (this.level > this.stats.highestLevel) {
-        this.stats.highestLevel = this.level;
-      }
-      
-      // Apply level bonuses
-      this.applyLevelBonuses();
-      
-      this.experience -= this.experienceToNextLevel;
-      this.experienceToNextLevel = Math.floor(this.experienceToNextLevel * 1.5);
-      
-      // Create level up effect
-      this.effects.push({
-        type: 'levelUp',
-        duration: 2000,
-        startTime: Date.now()
-      });
-      
-      // Create level up particles
-      if (this.game.particles) {
-        this.cells.forEach(cell => {
+checkLevelUp() {
+  if (this.experience >= this.experienceToNextLevel) {
+    this.level++;
+    
+    // Update highest level stat
+    if (this.level > this.stats.highestLevel) {
+      this.stats.highestLevel = this.level;
+    }
+    
+    // Apply level bonuses
+    this.applyLevelBonuses();
+    
+    this.experience -= this.experienceToNextLevel;
+    this.experienceToNextLevel = Math.floor(this.experienceToNextLevel * 1.5);
+    
+    // Create level up effect
+    this.effects.push({
+      type: 'levelUp',
+      duration: 2000,
+      startTime: Date.now()
+    });
+    
+    // Create level up particles
+    if (this.game.particles) {
+      this.cells.forEach(cell => {
+        // Check if createTextParticles method exists
+        if (typeof this.game.particles.createTextParticles === 'function') {
           this.game.particles.createTextParticles(cell.x, cell.y, 'LEVEL UP!', {
             color: '#ffeb3b',
             size: 20,
@@ -1536,32 +1538,39 @@ export class Player {
             life: 1.5,
             explosionForce: 60
           });
-        });
-      }
-      
-      // Play sound
-      this.game.soundManager.playSound('levelUp');
-      
-      // Show announcement
-      this.game.showAnnouncement(`${this.name} reached level ${this.level}!`, 3000);
-      
-      // Add notification
-      this.addNotification(`Level Up! Now level ${this.level}`, '#ffeb3b');
-      
-      // Distort all cell membranes for level up effect
-      this.cells.forEach(cell => {
-        this.distortMembrane(cell, 0, 0, 0.8);
+        } else {
+          // Fallback to createTextEffect if available
+          if (typeof this.game.particles.createTextEffect === 'function') {
+            this.game.particles.createTextEffect(cell.x, cell.y, 'LEVEL UP!', '#ffeb3b', 20);
+          }
+        }
       });
-      
-      // Check for level achievements
-      if (this.level >= 5) {
-        this.game.achievements.unlock('reach_level_5');
-      }
-      if (this.level >= 10) {
-        this.game.achievements.unlock('reach_level_10');
-      }
+    }
+    
+    // Play sound
+    this.game.soundManager.playSound('levelUp');
+    
+    // Show announcement
+    this.game.showAnnouncement(`${this.name} reached level ${this.level}!`, 3000);
+    
+    // Add notification
+    this.addNotification(`Level Up! Now level ${this.level}`, '#ffeb3b');
+    
+    // Distort all cell membranes for level up effect
+    this.cells.forEach(cell => {
+      this.distortMembrane(cell, 0, 0, 0.8);
+    });
+    
+    // Check for level achievements
+    if (this.level >= 5) {
+      this.game.achievements.unlock('reach_level_5');
+    }
+    if (this.level >= 10) {
+      this.game.achievements.unlock('reach_level_10');
     }
   }
+}
+
   
   applyLevelBonuses() {
     const bonus = this.levelBonuses[this.level];

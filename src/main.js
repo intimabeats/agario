@@ -1,4 +1,3 @@
-
 import { Game } from './game.js';
 import { Player } from './player.js';
 import { setupControls } from './controls.js';

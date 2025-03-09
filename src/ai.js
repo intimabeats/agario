@@ -1103,65 +1103,71 @@ export class AI {
     });
   }
   
-  checkVirusCollisions(viruses) {
-    if (!viruses || !viruses.length) return;
-    
-    viruses.forEach(virus => {
-      this.cells.forEach((cell, index) => {
-        const dx = cell.x - virus.x;
-        const dy = cell.y - virus.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distance < cell.radius + virus.radius) {
-          if (cell.radius > virus.radius * 1.15) {
-            // Split the cell if it's big enough
-            if (this.cells.length < 16) {
-              // Split in multiple directions
-              const splitDirections = 3 + Math.floor(Math.random() * 2); // 3-4 splits
-              for (let i = 0; i < splitDirections; i++) {
-                const angle = (i / splitDirections) * Math.PI * 2;
-                const targetX = virus.x + Math.cos(angle) * virus.radius * 2;
-                const targetY = virus.y + Math.sin(angle) * virus.radius * 2;
-                this.splitCell(index, targetX, targetY);
-              }
-              
-              // Add virus mass to the cell
-              const virusMass = virus.mass * 0.5; // Only get half the mass
-              cell.mass += virusMass;
-              cell.radius = Math.sqrt(cell.mass / Math.PI);
-              
-              // Update stats
-              this.stats.virusesEaten++;
-              
-              // Create particles
-              if (this.game.particles) {
-                this.game.particles.createVirusParticles(virus.x, virus.y);
-              }
-              
-              // Remove the virus
-              this.game.removeVirus(virus);
+checkVirusCollisions(viruses) {
+  if (!viruses || !viruses.length) return;
+  
+  viruses.forEach(virus => {
+    this.cells.forEach((cell, index) => {
+      const dx = cell.x - virus.x;
+      const dy = cell.y - virus.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < cell.radius + virus.radius) {
+        // Check if cell is large enough to consume the virus
+        if (cell.radius > virus.radius * 1.15) {
+          // Split the cell if it's big enough
+          if (this.cells.length < 16) {
+            // Split in multiple directions
+            const splitDirections = 3 + Math.floor(Math.random() * 2); // 3-4 splits
+            for (let i = 0; i < splitDirections; i++) {
+              const angle = (i / splitDirections) * Math.PI * 2;
+              const targetX = virus.x + Math.cos(angle) * virus.radius * 2;
+              const targetY = virus.y + Math.sin(angle) * virus.radius * 2;
+              this.splitCell(index, targetX, targetY);
             }
-          } else if (virus.canPassUnder(cell.radius)) {
-            // Smaller cells pass under the virus
-            cell.z = -1;
-            setTimeout(() => { 
-              if (cell && this.cells.includes(cell)) {
-                cell.z = 0;
-              }
-            }, 1000);
-          } else {
-            // Just push the cell away slightly
-            const pushFactor = 0.5;
-            const pushX = (dx / distance) * pushFactor;
-            const pushY = (dy / distance) * pushFactor;
             
-            cell.x += pushX;
-            cell.y += pushY;
+            // Add virus mass to the cell
+            const virusMass = virus.mass * 0.5; // Only get half the mass
+            cell.mass += virusMass;
+            cell.radius = Math.sqrt(cell.mass / Math.PI);
+            
+            // Update stats
+            this.stats.virusesEaten++;
+            
+            // Create particles
+            if (this.game.particles) {
+              this.game.particles.createVirusParticles(virus.x, virus.y);
+            }
+            
+            // Remove the virus
+            this.game.removeVirus(virus);
           }
+        } 
+        // Check if cell is small enough to pass under virus
+        // Fix: Use a direct size comparison instead of calling canPassUnder
+        else if (cell.radius < virus.radius * 0.9) {
+          // Smaller cells pass under the virus
+          cell.z = -1;
+          setTimeout(() => { 
+            if (cell && this.cells.includes(cell)) {
+              cell.z = 0;
+            }
+          }, 1000);
+        } 
+        else {
+          // Just push the cell away slightly
+          const pushFactor = 0.5;
+          const pushX = (dx / distance) * pushFactor;
+          const pushY = (dy / distance) * pushFactor;
+          
+          cell.x += pushX;
+          cell.y += pushY;
         }
-      });
+      }
     });
-  }
+  });
+}
+
   
   checkPowerUpCollisions(powerUps) {
     if (!powerUps || !powerUps.length) return;

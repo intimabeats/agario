@@ -524,31 +524,34 @@ export class SoundManager {
     return oscillator;
   }
   
-  createAchievementSound() {
-    const oscillator1 = this.audioContext.createOscillator();
-    oscillator1.type = 'sine';
-    oscillator1.frequency.setValueAtTime(523.25, this.audioContext.currentTime); // C5
-    oscillator1.frequency.setValueAtTime(659.25, this.audioContext.currentTime + 0.1); // E5
-    oscillator1.frequency.setValueAtTime(783.99, this.audioContext.currentTime + 0.2); // G5
-    oscillator1.frequency.setValueAtTime(1046.50, this.audioContext.currentTime + 0.3); // C6
-    
-    const gainNode = this.audioContext.createGain();
-    gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
-    gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime + 0.1);
-    gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime + 0.2);
-    gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime + 0.3);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.6);
-    
-    oscillator1.connect(gainNode);
-    
-    oscillator1.onended = () => {
-      oscillator1.disconnect();
-      gainNode.disconnect();
-    };
-    
-    oscillator1.stop(this.audioContext.currentTime + 0.6);
-    return oscillator1;
-  }
+createAchievementSound() {
+  const oscillator1 = this.audioContext.createOscillator();
+  oscillator1.type = 'sine';
+  oscillator1.frequency.setValueAtTime(523.25, this.audioContext.currentTime); // C5
+  oscillator1.frequency.setValueAtTime(659.25, this.audioContext.currentTime + 0.1); // E5
+  oscillator1.frequency.setValueAtTime(783.99, this.audioContext.currentTime + 0.2); // G5
+  oscillator1.frequency.setValueAtTime(1046.50, this.audioContext.currentTime + 0.3); // C6
+  
+  const gainNode = this.audioContext.createGain();
+  gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+  gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime + 0.1);
+  gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime + 0.2);
+  gainNode.gain.setValueAtTime(0.3, this.audioContext.currentTime + 0.3);
+  gainNode.gain.exponentialRampToValueAtTime(0.01, this.audioContext.currentTime + 0.6);
+  
+  oscillator1.connect(gainNode);
+  
+  // Start the oscillator before returning it
+  oscillator1.start(0);
+  
+  oscillator1.onended = () => {
+    oscillator1.disconnect();
+    gainNode.disconnect();
+  };
+  
+  oscillator1.stop(this.audioContext.currentTime + 0.6);
+  return oscillator1;
+}
   
   createFreezeSound() {
     const oscillator = this.audioContext.createOscillator();

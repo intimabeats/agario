@@ -465,7 +465,6 @@ export class ParticleSystem {
     
     ctx.restore();
   }
-  
   drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius, color) {
     let rot = Math.PI / 2 * 3;
     let x = cx;
@@ -666,6 +665,7 @@ export class ParticleSystem {
     );
   }
   
+  // Add the missing particle creation methods
   createFoodParticles(x, y, color) {
     const settings = this.effectSettings.food;
     const particleCount = settings.particleCount;
@@ -705,66 +705,86 @@ export class ParticleSystem {
       type: this.particleTypes.food
     });
   }
-  createLevelUpParticles(x, y, color) {
-    const settings = this.effectSettings.levelUp;
+  
+  createEatParticles(x, y, color) {
+    const settings = this.effectSettings.eat;
     const particleCount = settings.particleCount;
     
-    // Create star burst effect
-    if (settings.starBurst) {
-      for (let i = 0; i < particleCount; i++) {
-        const angle = (i / particleCount) * Math.PI * 2;
-        const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
-        const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
-        
-        this.createParticle({
-          x,
-          y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          size,
-          color: settings.color,
-          life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
-          maxLife: settings.life.max,
-          shrink: settings.shrink,
-          drag: settings.drag,
-          type: this.particleTypes.levelUp,
-          shape: 'star',
-          points: 5,
-          rotate: true,
-          rotation: Math.random() * Math.PI * 2,
-          rotationSpeed: (Math.random() - 0.5) * 2
-        });
-      }
+    for (let i = 0; i < particleCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
+      const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
+      
+      this.createParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        color,
+        life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
+        maxLife: settings.life.max,
+        shrink: settings.shrink,
+        gravity: settings.gravity,
+        drag: settings.drag,
+        type: this.particleTypes.eat,
+        gradient: settings.gradient,
+        gradientColor: 'rgba(255, 255, 255, 0.3)'
+      });
     }
     
-    // Create glow effect
+    // Add a glow effect
     this.createParticle({
       x,
       y,
       size: settings.glowSize,
-      color: settings.color,
+      color: color,
       life: settings.glowDuration,
       maxLife: settings.glowDuration,
       shape: 'glow',
-      type: this.particleTypes.levelUp
+      type: this.particleTypes.eat
     });
     
-    // Create text effect
-    if (settings.textMessage) {
-      this.createTextEffect(x, y - 30, settings.textMessage, settings.color, settings.textSize);
+    // Add score text effect if enabled
+    if (settings.textScore) {
+      this.createTextEffect(x, y - 20, '+' + Math.floor(Math.random() * 100), '#ffeb3b', 16);
     }
   }
   
-  createAchievementParticles(x, y, color) {
-    const settings = this.effectSettings.achievement;
+  createVirusParticles(x, y) {
+    const settings = this.effectSettings.virus;
     const particleCount = settings.particleCount;
+    const color = '#33ff33'; // Virus color
     
-    // Create star burst effect
-    if (settings.starBurst) {
-      for (let i = 0; i < particleCount / 2; i++) {
-        const angle = (i / (particleCount / 2)) * Math.PI * 2;
-        const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
-        const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
+    for (let i = 0; i < particleCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
+      const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
+      
+      this.createParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        color,
+        life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
+        maxLife: settings.life.max,
+        shrink: settings.shrink,
+        gravity: settings.gravity,
+        drag: settings.drag,
+        type: this.particleTypes.virus,
+        gradient: settings.gradient,
+        gradientColor: 'rgba(51, 255, 51, 0.3)'
+      });
+    }
+    
+    // Add spiky particles if enabled
+    if (settings.spikyParticles) {
+      for (let i = 0; i < settings.spikyParticles; i++) {
+        const angle = (i / settings.spikyParticles) * Math.PI * 2;
+        const speed = settings.speed.min * 1.5;
+        const size = settings.size.max;
         
         this.createParticle({
           x,
@@ -772,67 +792,304 @@ export class ParticleSystem {
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
           size,
-          color: settings.color,
-          life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
+          color,
+          life: settings.life.max,
           maxLife: settings.life.max,
-          shrink: settings.shrink,
+          shrink: settings.shrink * 1.5,
+          gravity: 0,
           drag: settings.drag,
-          type: this.particleTypes.achievement,
+          type: this.particleTypes.virus,
           shape: 'star',
-          points: 5,
+          points: 3,
           rotate: true,
-          rotation: Math.random() * Math.PI * 2,
-          rotationSpeed: (Math.random() - 0.5) * 2
+          rotation: angle,
+          rotationSpeed: Math.random() * 2 - 1
         });
       }
     }
     
-    // Create confetti effect
-    if (settings.confetti) {
-      for (let i = 0; i < particleCount / 2; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
-        const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
-        
-        // Random confetti color
-        const confettiColors = ['#ff5252', '#4caf50', '#2196f3', '#ff9800', '#9c27b0', '#00bcd4', '#ffeb3b', '#e91e63'];
-        const confettiColor = confettiColors[Math.floor(Math.random() * confettiColors.length)];
-        
-        this.createParticle({
-          x,
-          y,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          size,
-          color: confettiColor,
-          life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
-          maxLife: settings.life.max,
-          shrink: settings.shrink,
-          drag: settings.drag,
-          type: this.particleTypes.achievement,
-          shape: 'confetti',
-          rotate: true,
-          rotation: Math.random() * Math.PI * 2,
-          rotationSpeed: (Math.random() - 0.5) * 5
-        });
-      }
-    }
-    
-    // Create glow effect
+    // Add a glow effect
     this.createParticle({
       x,
       y,
       size: settings.glowSize,
-      color: settings.color,
+      color: color,
       life: settings.glowDuration,
       maxLife: settings.glowDuration,
       shape: 'glow',
-      type: this.particleTypes.achievement
+      type: this.particleTypes.virus
+    });
+  }
+  
+  createSplitParticles(x, y, color, dirX, dirY) {
+    const settings = this.effectSettings.split;
+    const particleCount = settings.particleCount;
+    
+    // If direction is not provided, use random directions
+    if (dirX === undefined || dirY === undefined) {
+      dirX = 1;
+      dirY = 0;
+    }
+    
+    // Normalize direction
+    const length = Math.sqrt(dirX * dirX + dirY * dirY);
+    if (length > 0) {
+      dirX /= length;
+      dirY /= length;
+    }
+    
+    // Create particles in a cone in the split direction
+    for (let i = 0; i < particleCount; i++) {
+      // Calculate angle within a cone in the split direction
+      const spreadAngle = Math.PI / 4; // 45 degrees spread
+      const baseAngle = Math.atan2(dirY, dirX);
+      const angle = baseAngle + (Math.random() - 0.5) * spreadAngle;
+      
+      const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
+      const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
+      
+      this.createParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        color,
+        life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
+        maxLife: settings.life.max,
+        shrink: settings.shrink,
+        drag: settings.drag,
+        type: this.particleTypes.split,
+        trail: settings.trailLength > 0,
+        trailDuration: settings.trailDuration
+      });
+    }
+  }
+  
+  createEjectParticles(x, y, color, dirX, dirY) {
+    const settings = this.effectSettings.eject;
+    const particleCount = settings.particleCount;
+    
+    // If direction is not provided, use random directions
+    if (dirX === undefined || dirY === undefined) {
+      dirX = 1;
+      dirY = 0;
+    }
+    
+    // Normalize direction
+    const length = Math.sqrt(dirX * dirX + dirY * dirY);
+    if (length > 0) {
+      dirX /= length;
+      dirY /= length;
+    }
+    
+    // Create particles in the ejection direction
+    for (let i = 0; i < particleCount; i++) {
+      // Calculate angle within a narrow cone in the ejection direction
+      const spreadAngle = Math.PI / 6; // 30 degrees spread
+      const baseAngle = Math.atan2(dirY, dirX);
+      const angle = baseAngle + (Math.random() - 0.5) * spreadAngle;
+      
+      const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
+      const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
+      
+      this.createParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        color,
+        life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
+        maxLife: settings.life.max,
+        shrink: settings.shrink,
+        drag: settings.drag,
+        type: this.particleTypes.eject
+      });
+    }
+    
+    // Create trail particles if enabled
+    if (settings.trailCount > 0) {
+      for (let i = 0; i < settings.trailCount; i++) {
+        const distance = i * (settings.trailDistance / settings.trailCount);
+        const trailX = x - dirX * distance;
+        const trailY = y - dirY * distance;
+        
+        this.createParticle({
+          x: trailX,
+          y: trailY,
+          size: settings.size.min * (1 - i / settings.trailCount),
+          color,
+          life: settings.life.min * (1 - i / settings.trailCount),
+          maxLife: settings.life.min * (1 - i / settings.trailCount),
+          fadeOut: true,
+          shrink: settings.shrink * 2,
+          type: this.particleTypes.eject
+        });
+      }
+    }
+  }
+  
+  createMergeParticles(x, y, color) {
+    const settings = this.effectSettings.merge;
+    const particleCount = settings.particleCount;
+    
+    for (let i = 0; i < particleCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      let speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
+      const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
+      
+      // If implosion effect, particles move inward
+      if (settings.implosion) {
+        speed = -speed;
+      }
+      
+      this.createParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        color,
+        life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
+        maxLife: settings.life.max,
+        shrink: settings.shrink,
+        drag: settings.drag,
+        type: this.particleTypes.merge,
+        gradient: true,
+        gradientColor: 'rgba(255, 255, 255, 0.3)'
+      });
+    }
+    
+    // Add a glow effect
+    this.createParticle({
+      x,
+      y,
+      size: settings.glowSize,
+      color: color,
+      life: settings.glowDuration,
+      maxLife: settings.glowDuration,
+      shape: 'glow',
+      type: this.particleTypes.merge
     });
     
-    // Create text effect
+    // Add text message if enabled
     if (settings.textMessage) {
-      this.createTextEffect(x, y - 40, settings.textMessage, settings.color, settings.textSize);
+      this.createTextEffect(x, y - 20, settings.textMessage, color, 16);
+    }
+  }
+  
+  createDamageParticles(x, y) {
+    const settings = this.effectSettings.damage;
+    const particleCount = settings.particleCount;
+    const color = settings.color;
+    
+    for (let i = 0; i < particleCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
+      const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
+      
+      this.createParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        color,
+        life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
+        maxLife: settings.life.max,
+        shrink: settings.shrink,
+        drag: settings.drag,
+        type: this.particleTypes.damage
+      });
+    }
+    
+    // Add flash effect
+    this.createParticle({
+      x,
+      y,
+      size: 50,
+      color: 'rgba(255, 0, 0, 0.3)',
+      life: settings.flashDuration,
+      maxLife: settings.flashDuration,
+      shape: 'glow',
+      type: this.particleTypes.damage
+    });
+    
+    // Add text message if enabled
+    if (settings.textMessage) {
+      this.createTextEffect(x, y - 20, settings.textMessage, color, 16);
+    }
+  }
+  
+  createPowerUpParticles(x, y, color) {
+    const settings = this.effectSettings.powerUp;
+    const particleCount = settings.particleCount;
+    
+    for (let i = 0; i < particleCount; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = settings.speed.min + Math.random() * (settings.speed.max - settings.speed.min);
+      const size = settings.size.min + Math.random() * (settings.size.max - settings.size.min);
+      
+      this.createParticle({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size,
+        color,
+        life: settings.life.min + Math.random() * (settings.life.max - settings.life.min),
+        maxLife: settings.life.max,
+        shrink: settings.shrink,
+        drag: settings.drag,
+        type: this.particleTypes.powerUp,
+        gradient: true,
+        gradientColor: 'rgba(255, 255, 255, 0.3)'
+      });
+    }
+    
+    // Add star particles if enabled
+    if (settings.starParticles) {
+      for (let i = 0; i < settings.starParticles; i++) {
+        const angle = (i / settings.starParticles) * Math.PI * 2;
+        const speed = settings.speed.max;
+        
+        this.createParticle({
+          x,
+          y,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: settings.size.max,
+          color: color,
+          life: settings.life.max,
+          maxLife: settings.life.max,
+          shrink: settings.shrink,
+          drag: settings.drag,
+          type: this.particleTypes.powerUp,
+          shape: 'star',
+          points: 5,
+          rotate: true,
+          rotation: Math.random() * Math.PI * 2,
+          rotationSpeed: Math.random() * 2 - 1
+        });
+      }
+    }
+    
+    // Add a glow effect
+    this.createParticle({
+      x,
+      y,
+      size: settings.glowSize,
+      color: color,
+      life: settings.glowDuration,
+      maxLife: settings.glowDuration,
+      shape: 'glow',
+      type: this.particleTypes.powerUp
+    });
+    
+    // Add text message if enabled
+    if (settings.textMessage) {
+      this.createTextEffect(x, y - 30, settings.textMessage, color, 18);
     }
   }
   
@@ -854,278 +1111,6 @@ export class ParticleSystem {
       stroke: true,
       strokeColor: 'rgba(0, 0, 0, 0.5)',
       strokeWidth: 3
-    });
-  }
-  
-  createTextParticles(x, y, text, options = {}) {
-    const defaults = {
-      color: '#ffffff',
-      size: 20,
-      particleSize: 3,
-      particleDensity: 0.3,
-      life: 1.0,
-      explosionForce: 50
-    };
-    
-    const settings = { ...defaults, ...options };
-    
-    // Create temporary canvas to render text
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    // Set canvas size based on text size
-    canvas.width = settings.size * text.length * 0.8;
-    canvas.height = settings.size * 1.5;
-    
-    // Draw text on canvas
-    ctx.font = `${settings.size}px Arial`;
-    ctx.fillStyle = settings.color;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, canvas.width / 2, canvas.height / 2);
-    
-    // Sample pixels from canvas and create particles
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const pixels = imageData.data;
-    
-    for (let i = 0; i < pixels.length; i += 4) {
-      // Only create particles for non-transparent pixels
-      if (pixels[i + 3] > 0 && Math.random() < settings.particleDensity) {
-        // Calculate position
-        const pixelIndex = i / 4;
-        const pixelX = pixelIndex % canvas.width;
-        const pixelY = Math.floor(pixelIndex / canvas.width);
-        
-        // Convert to world coordinates
-        const worldX = x + pixelX - canvas.width / 2;
-        const worldY = y + pixelY - canvas.height / 2;
-        
-        // Calculate velocity (explode outward from center)
-        const dx = worldX - x;
-        const dy = worldY - y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const angle = Math.atan2(dy, dx);
-        
-        const speed = (distance / Math.max(canvas.width, canvas.height)) * settings.explosionForce;
-        
-        this.createParticle({
-          x: worldX,
-          y: worldY,
-          vx: Math.cos(angle) * speed,
-          vy: Math.sin(angle) * speed,
-          size: settings.particleSize,
-          color: settings.color,
-          life: settings.life * (0.8 + Math.random() * 0.4),
-          maxLife: settings.life,
-          fadeOut: true,
-          shrink: 1,
-          drag: 0.95,
-          type: this.particleTypes.text
-        });
-      }
-    }
-  }
-  
-  createTrailEffect(cell, options = {}) {
-    const defaults = {
-      color: '#ffffff',
-      size: 5,
-      interval: 0.05,
-      life: 0.5,
-      fadeOut: true,
-      shrink: 1
-    };
-    
-    const settings = { ...defaults, ...options };
-    
-    // Only create trail particles at intervals
-    if (Math.random() > settings.interval) return;
-    
-    this.createParticle({
-      x: cell.x,
-      y: cell.y,
-      size: settings.size,
-      color: settings.color,
-      life: settings.life,
-      maxLife: settings.life,
-      fadeOut: settings.fadeOut,
-      shrink: settings.shrink,
-      type: this.particleTypes.trail
-    });
-  }
-  
-  createShockwave(x, y, options = {}) {
-    const defaults = {
-      color: 'rgba(255, 255, 255, 0.5)',
-      size: 50,
-      expandSpeed: 100,
-      life: 0.5
-    };
-    
-    const settings = { ...defaults, ...options };
-    
-    // Create expanding ring
-    const expandingRing = {
-      x,
-      y,
-      size: 10,
-      color: settings.color,
-      life: settings.life,
-      maxLife: settings.life,
-      fadeOut: true,
-      type: this.particleTypes.standard,
-      shape: 'circle',
-      stroke: true,
-      strokeColor: settings.color,
-      strokeWidth: 3,
-      fill: false,
-      update: function(deltaTime) {
-        // Expand the ring
-        this.size += settings.expandSpeed * deltaTime;
-        
-        // Thin out the stroke as it expands
-        this.strokeWidth = Math.max(0.5, 3 * (1 - this.size / settings.size));
-      },
-      draw: function(ctx) {
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-        ctx.strokeStyle = this.strokeColor;
-        ctx.lineWidth = this.strokeWidth;
-        ctx.stroke();
-      }
-    };
-    
-    this.particles.push(expandingRing);
-  }
-  
-  createPulseEffect(x, y, options = {}) {
-    const defaults = {
-      color: 'rgba(255, 255, 255, 0.5)',
-      size: 50,
-      pulseCount: 3,
-      interval: 0.2,
-      life: 1.0
-    };
-    
-    const settings = { ...defaults, ...options };
-    
-    // Create multiple pulses with delay
-    for (let i = 0; i < settings.pulseCount; i++) {
-      setTimeout(() => {
-        this.createShockwave(x, y, {
-          color: settings.color,
-          size: settings.size,
-          expandSpeed: settings.size / settings.life,
-          life: settings.life
-        });
-      }, i * settings.interval * 1000);
-    }
-  }
-  
-  createRipple(x, y, color, size) {
-    // Create ripple effect (multiple expanding rings)
-    for (let i = 0; i < 3; i++) {
-      setTimeout(() => {
-        this.createShockwave(x, y, {
-          color,
-          size,
-          expandSpeed: size / 0.5,
-          life: 0.5
-        });
-      }, i * 150);
-    }
-  }
-  
-  createVortex(x, y, options = {}) {
-    const defaults = {
-      color: 'rgba(255, 255, 255, 0.5)',
-      particleCount: 20,
-      radius: 50,
-      rotationSpeed: 2,
-      life: 1.0,
-      inward: false
-    };
-    
-    const settings = { ...defaults, ...options };
-    
-    // Create particles that rotate around a center point
-    for (let i = 0; i < settings.particleCount; i++) {
-      const angle = (i / settings.particleCount) * Math.PI * 2;
-      const distance = settings.radius * (0.5 + Math.random() * 0.5);
-      const particleX = x + Math.cos(angle) * distance;
-      const particleY = y + Math.sin(angle) * distance;
-      
-      const particle = {
-        x: particleX,
-        y: particleY,
-        centerX: x,
-        centerY: y,
-        angle,
-        distance,
-        size: 3 + Math.random() * 3,
-        color: settings.color,
-        life: settings.life * (0.8 + Math.random() * 0.4),
-        maxLife: settings.life,
-        fadeOut: true,
-        type: this.particleTypes.standard,
-        rotationSpeed: settings.rotationSpeed * (0.8 + Math.random() * 0.4),
-        inward: settings.inward,
-        update: function(deltaTime) {
-          // Rotate around center
-          this.angle += this.rotationSpeed * deltaTime;
-          
-          // Move inward or outward
-          if (this.inward) {
-            this.distance -= this.distance * 0.5 * deltaTime;
-          } else {
-            this.distance += this.distance * 0.2 * deltaTime;
-          }
-          
-          // Update position
-          this.x = this.centerX + Math.cos(this.angle) * this.distance;
-          this.y = this.centerY + Math.sin(this.angle) * this.distance;
-        }
-      };
-      
-      this.particles.push(particle);
-    }
-  }
-  
-  createExplosion(x, y, color, size) {
-    // Create particles exploding outward
-    const particleCount = Math.min(50, Math.floor(size / 2));
-    
-    for (let i = 0; i < particleCount; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = 30 + Math.random() * 50;
-      const particleSize = 3 + Math.random() * 3;
-      
-      this.createParticle({
-        x,
-        y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        size: particleSize,
-        color,
-        life: 0.5 + Math.random() * 0.5,
-        maxLife: 1.0,
-        fadeOut: true,
-        shrink: 1,
-        drag: 0.95,
-        type: this.particleTypes.standard
-      });
-    }
-    
-    // Create glow effect
-    this.createParticle({
-      x,
-      y,
-      size: size * 1.5,
-      color,
-      life: 0.3,
-      maxLife: 0.3,
-      shape: 'glow',
-      type: this.particleTypes.standard
     });
   }
   
@@ -1158,4 +1143,73 @@ export class ParticleSystem {
     
     return rgb2hex(r, g, b);
   }
+	createTextParticles(x, y, text, options = {}) {
+  const defaults = {
+    color: '#ffffff',
+    size: 20,
+    particleSize: 3,
+    particleDensity: 0.3,
+    life: 1.0,
+    explosionForce: 50
+  };
+  
+  const settings = { ...defaults, ...options };
+  
+  // Create temporary canvas to render text
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  
+  // Set canvas size based on text size
+  canvas.width = settings.size * text.length * 0.8;
+  canvas.height = settings.size * 1.5;
+  
+  // Draw text on canvas
+  ctx.font = `${settings.size}px Arial`;
+  ctx.fillStyle = settings.color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+  
+  // Sample pixels from canvas and create particles
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const pixels = imageData.data;
+  
+  for (let i = 0; i < pixels.length; i += 4) {
+    // Only create particles for non-transparent pixels
+    if (pixels[i + 3] > 0 && Math.random() < settings.particleDensity) {
+      // Calculate position
+      const pixelIndex = i / 4;
+      const pixelX = pixelIndex % canvas.width;
+      const pixelY = Math.floor(pixelIndex / canvas.width);
+      
+      // Convert to world coordinates
+      const worldX = x + pixelX - canvas.width / 2;
+      const worldY = y + pixelY - canvas.height / 2;
+      
+      // Calculate velocity (explode outward from center)
+      const dx = worldX - x;
+      const dy = worldY - y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const angle = Math.atan2(dy, dx);
+      
+      const speed = (distance / Math.max(canvas.width, canvas.height)) * settings.explosionForce;
+      
+      this.createParticle({
+        x: worldX,
+        y: worldY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: settings.particleSize,
+        color: settings.color,
+        life: settings.life * (0.8 + Math.random() * 0.4),
+        maxLife: settings.life,
+        fadeOut: true,
+        shrink: 1,
+        drag: 0.95,
+        type: this.particleTypes.text
+      });
+    }
+  }
+}
+
 }
