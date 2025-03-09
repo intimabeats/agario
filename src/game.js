@@ -354,29 +354,74 @@ export class Game {
     });
   }
   
-  setPlayer(player) {
-    this.player = player;
-    this.centerCamera();
+// Correção do arquivo game.js - Função setPlayer
+setPlayer(player) {
+  this.player = player;
+  
+  // Certifique-se de que a posição inicial do jogador é válida
+  player.x = this.worldSize / 2; // Iniciar no centro do mapa
+  player.y = this.worldSize / 2; // Iniciar no centro do mapa
+  player.targetX = player.x;
+  player.targetY = player.y;
+  
+  // Inicialize as células do jogador com a posição correta
+  if (player.cells.length > 0) {
+    player.cells[0].x = player.x;
+    player.cells[0].y = player.y;
+    player.cells[0].velocityX = 0;
+    player.cells[0].velocityY = 0;
+  } else {
+    // Criar uma célula se não existir
+    player.cells.push({
+      x: player.x,
+      y: player.y,
+      radius: player.baseRadius,
+      mass: Math.PI * player.baseRadius * player.baseRadius,
+      velocityX: 0,
+      velocityY: 0,
+      membrane: {
+        points: 20,
+        elasticity: 0.3,
+        distortion: 0.15,
+        oscillation: 0.05,
+        oscillationSpeed: 1.5,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      },
+      z: 0,
+      id: 'cell-' + Date.now() + '-0',
+      effects: []
+    });
     
-    // Add player to team in team mode
-    if (this.gameMode === 'teams') {
-      const teamNames = Object.keys(this.teams);
-      const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
-      this.teams[teamName].players.push(player);
-      player.team = teamName;
-      player.color = this.getTeamColor(teamName);
-    }
-    
-    // Apply balance settings to player
-    player.baseSpeed = this.balanceSettings.playerBaseSpeed;
-    player.splitVelocity = this.balanceSettings.playerSplitVelocity;
-    player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
-    player.growthRate = this.balanceSettings.playerGrowthRate;
-    player.shrinkRate = this.balanceSettings.playerShrinkRate;
-    
-    // Initialize player achievements
-    this.achievements.initPlayer(player);
+    // Inicializar a membrana da célula
+    player.initCellMembranes();
   }
+  
+  // Centralize a câmera no jogador
+  this.centerCamera();
+  
+  // Add player to team in team mode
+  if (this.gameMode === 'teams') {
+    const teamNames = Object.keys(this.teams);
+    const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
+    this.teams[teamName].players.push(player);
+    player.team = teamName;
+    player.color = this.getTeamColor(teamName);
+  }
+  
+  // Apply balance settings to player
+  player.baseSpeed = this.balanceSettings.playerBaseSpeed;
+  player.splitVelocity = this.balanceSettings.playerSplitVelocity;
+  player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
+  player.growthRate = this.balanceSettings.playerGrowthRate;
+  player.shrinkRate = this.balanceSettings.playerShrinkRate;
+  
+  // Initialize player achievements
+  this.achievements.initPlayer(player);
+  
+  console.log("Player set in game:", player.x, player.y, "Target:", player.targetX, player.targetY);
+}
+
   
   getTeamColor(teamName) {
     return this.teams[teamName]?.color || '#ffffff';
@@ -513,48 +558,51 @@ export class Game {
   }
   
   gameLoop(timestamp) {
-    // Calculate delta time
-    if (!timestamp) timestamp = performance.now();
-    const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
-    this.lastFrameTime = timestamp;
+  // Calculate delta time
+  if (!timestamp) timestamp = performance.now();
+  const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
+  this.lastFrameTime = timestamp;
+  
+  // Cap delta time to prevent large jumps
+  const cappedDeltaTime = Math.min(deltaTime, 0.1);
+  
+  // Update game time
+  this.gameTime += cappedDeltaTime;
+  
+  // Update FPS counter
+  this.frameCount++;
+  if (timestamp - this.fpsUpdateTime > 1000) {
+    this.fps = this.frameCount;
+    this.frameCount = 0;
+    this.fpsUpdateTime = timestamp;
     
-    // Cap delta time to prevent large jumps
-    const cappedDeltaTime = Math.min(deltaTime, 0.1);
-    
-    // Update game time
-    this.gameTime += cappedDeltaTime;
-    
-    // Update FPS counter
-    this.frameCount++;
-    if (timestamp - this.fpsUpdateTime > 1000) {
-      this.fps = this.frameCount;
-      this.frameCount = 0;
-      this.fpsUpdateTime = timestamp;
-    }
-    
-    // Skip update if paused
-    if (this.isPaused) {
-      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
-      return;
-    }
-    
-    // Fixed time step for physics
-    this.accumulator += cappedDeltaTime;
-    while (this.accumulator >= 1 / this.targetFPS) {
-      this.update(1 / this.targetFPS);
-      this.accumulator -= 1 / this.targetFPS;
-    }
-    
-    // Render at display refresh rate
-    this.render();
-    
-    // Process removal queues
-    this.processRemovalQueues();
-    
-    if (!this.isGameOver) {
-      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
-    }
+    // Debug log
+    console.log("FPS:", this.fps, "Player position:", this.player?.x, this.player?.y);
   }
+  
+  // Skip update if paused
+  if (this.isPaused) {
+    this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
+    return;
+  }
+  
+  // Fixed time step for physics
+  this.accumulator += cappedDeltaTime;
+  while (this.accumulator >= 1 / this.targetFPS) {
+    this.update(1 / this.targetFPS);
+    this.accumulator -= 1 / this.targetFPS;
+  }
+  
+  // Render at display refresh rate
+  this.render();
+  
+  // Process removal queues
+  this.processRemovalQueues();
+  
+  if (!this.isGameOver) {
+    this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
+  }
+}
   
   update(deltaTime) {
     // Scale delta time by time scale (for slow-motion effects)
@@ -1181,28 +1229,59 @@ updateVisibleEntities() {
     );
   }
   
-  centerCamera() {
-    if (!this.player) return;
+centerCamera() {
+  if (!this.player) return;
+  
+  // Verificar se as coordenadas do jogador são válidas
+  if (isNaN(this.player.x) || isNaN(this.player.y)) {
+    console.error("Invalid player coordinates for camera centering:", this.player.x, this.player.y);
+    return;
+  }
+  
+  // Calculate target camera position (center of mass of player cells)
+  let totalX = 0;
+  let totalY = 0;
+  let totalMass = 0;
+  let validCells = 0;
+  
+  this.player.cells.forEach(cell => {
+    // Verificar se as coordenadas e massa da célula são válidas
+    if (isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
+      return;
+    }
     
-    // Calculate target camera position (center of mass of player cells)
-    let totalX = 0;
-    let totalY = 0;
-    let totalMass = 0;
-    
-    this.player.cells.forEach(cell => {
-      totalX += cell.x * cell.mass;
-      totalY += cell.y * cell.mass;
-      totalMass += cell.mass;
-    });
-    
+    totalX += cell.x * cell.mass;
+    totalY += cell.y * cell.mass;
+    totalMass += cell.mass;
+    validCells++;
+  });
+  
+  // Se não houver células válidas, use a posição do jogador
+  if (validCells === 0 || totalMass <= 0) {
+    this.camera.x = this.player.x;
+    this.camera.y = this.player.y;
+  } else {
     const targetX = totalX / totalMass;
     const targetY = totalY / totalMass;
     
-    // Smooth camera movement
-    this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
-    this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
+    // Verificar se as coordenadas calculadas são válidas
+    if (isNaN(targetX) || isNaN(targetY)) {
+      console.error("Invalid camera target calculated:", totalX, totalY, totalMass);
+      return;
+    }
     
-    // Calculate camera scale based on player size
+    // Smooth camera movement
+    if (isNaN(this.camera.x) || isNaN(this.camera.y)) {
+      this.camera.x = targetX;
+      this.camera.y = targetY;
+    } else {
+      this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
+      this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
+    }
+  }
+  
+  // Calculate camera scale based on player size
+  if (this.player.cells.length > 0) {
     const largestCell = this.player.cells.reduce((largest, cell) => 
       cell.radius > largest.radius ? cell : largest, this.player.cells[0]);
     
@@ -1210,12 +1289,25 @@ updateVisibleEntities() {
     const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestCell.radius));
     
     // Smooth scale transition
-    this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
-    
-    // Keep camera within world bounds
-    this.camera.x = Math.max(this.cameraBounds.minX, Math.min(this.cameraBounds.maxX, this.camera.x));
-    this.camera.y = Math.max(this.cameraBounds.minY, Math.min(this.cameraBounds.maxY, this.camera.y));
+    if (isNaN(this.camera.scale)) {
+      this.camera.scale = targetScale;
+    } else {
+      this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
+    }
   }
+  
+  // Keep camera within world bounds
+  this.camera.x = Math.max(this.cameraBounds.minX, Math.min(this.cameraBounds.maxX, this.camera.x));
+  this.camera.y = Math.max(this.cameraBounds.minY, Math.min(this.cameraBounds.maxY, this.camera.y));
+  
+  // Verificar se as coordenadas finais da câmera são válidas
+  if (isNaN(this.camera.x) || isNaN(this.camera.y) || isNaN(this.camera.scale)) {
+    console.error("Invalid camera values after centering:", this.camera.x, this.camera.y, this.camera.scale);
+    this.camera.x = this.worldSize / 2;
+    this.camera.y = this.worldSize / 2;
+    this.camera.scale = 1.0;
+  }
+}
   
   render() {
     // Performance measurement

@@ -1,4 +1,11 @@
 export function setupControls(game, player) {
+  if (!game || !player) {
+    console.error("Invalid game or player for controls setup:", game, player);
+    return;
+  }
+  
+  console.log("Setting up controls for player", player.name);
+  
   // Mouse movement
   game.canvas.addEventListener('mousemove', (e) => {
     if (game.isGameOver || game.isPaused) return;
@@ -8,9 +15,23 @@ export function setupControls(game, player) {
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
     
+    // Verificar se as coordenadas do mouse são válidas
+    if (isNaN(mouseX) || isNaN(mouseY)) {
+      console.error("Invalid mouse coordinates:", mouseX, mouseY);
+      return;
+    }
+    
     // Convert to world coordinates
     const worldX = game.camera.x + (mouseX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (mouseY - game.height / 2) / game.camera.scale;
+    
+    // Verificar se as coordenadas do mundo são válidas
+    if (isNaN(worldX) || isNaN(worldY)) {
+      console.error("Invalid world coordinates:", worldX, worldY);
+      return;
+    }
+    
+    console.log("Mouse move:", mouseX, mouseY, "World:", worldX, worldY);
     
     // Update player input
     player.updateInput({
@@ -18,9 +39,11 @@ export function setupControls(game, player) {
       mouseY: mouseY
     });
     
-    // Set player target
+    // Set player target directly
     player.targetX = worldX;
     player.targetY = worldY;
+    
+    console.log("Player target updated:", player.targetX, player.targetY);
   });
   
   // Touch movement for mobile
@@ -33,9 +56,21 @@ export function setupControls(game, player) {
     const touchX = e.touches[0].clientX - rect.left;
     const touchY = e.touches[0].clientY - rect.top;
     
+    // Verificar se as coordenadas de toque são válidas
+    if (isNaN(touchX) || isNaN(touchY)) {
+      console.error("Invalid touch coordinates:", touchX, touchY);
+      return;
+    }
+    
     // Convert to world coordinates
     const worldX = game.camera.x + (touchX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (touchY - game.height / 2) / game.camera.scale;
+    
+    // Verificar se as coordenadas do mundo são válidas
+    if (isNaN(worldX) || isNaN(worldY)) {
+      console.error("Invalid world coordinates from touch:", worldX, worldY);
+      return;
+    }
     
     // Update player input
     player.updateInput({
@@ -44,7 +79,7 @@ export function setupControls(game, player) {
       touchY: touchY
     });
     
-    // Set player target
+    // Set player target directly
     player.targetX = worldX;
     player.targetY = worldY;
   }, { passive: false });
@@ -58,9 +93,21 @@ export function setupControls(game, player) {
     const touchX = e.touches[0].clientX - rect.left;
     const touchY = e.touches[0].clientY - rect.top;
     
+    // Verificar se as coordenadas de toque são válidas
+    if (isNaN(touchX) || isNaN(touchY)) {
+      console.error("Invalid touch start coordinates:", touchX, touchY);
+      return;
+    }
+    
     // Convert to world coordinates
     const worldX = game.camera.x + (touchX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (touchY - game.height / 2) / game.camera.scale;
+    
+    // Verificar se as coordenadas do mundo são válidas
+    if (isNaN(worldX) || isNaN(worldY)) {
+      console.error("Invalid world coordinates from touch start:", worldX, worldY);
+      return;
+    }
     
     // Update player input
     player.updateInput({
@@ -69,7 +116,7 @@ export function setupControls(game, player) {
       touchY: touchY
     });
     
-    // Set player target
+    // Set player target directly
     player.targetX = worldX;
     player.targetY = worldY;
   }, { passive: false });

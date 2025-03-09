@@ -2,6 +2,7 @@ export class Virus {
   constructor(x, y, game) {
     this.x = x;
     this.y = y;
+		this.z = 5;
     this.game = game;
     this.radius = 30;
     this.mass = Math.PI * this.radius * this.radius;
@@ -68,6 +69,11 @@ export class Virus {
     this.isVisible = false;
     this.lastUpdateTime = Date.now();
     this.updateInterval = 100; // Update every 100ms for performance
+  }
+
+	canPassUnder(cellRadius) {
+    // Smaller cells can pass under
+    return cellRadius < this.radius * 0.9;
   }
   
   initSpikeTips() {

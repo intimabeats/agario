@@ -214,6 +214,7 @@ function saveSettings() {
 }
 
 // Initialize the game
+// Correção do arquivo main.js - Função initGame
 function initGame() {
   const playerName = playerNameInput?.value.trim() || 'Player';
   const selectedColor = getSelectedColor();
@@ -249,7 +250,7 @@ function initGame() {
   // Set player in game
   game.setPlayer(player);
   
-  // Setup controls
+  // Setup controls - IMPORTANTE: Certifique-se de que isso está sendo chamado
   setupControls(game, player);
   
   // Set audio preferences
@@ -278,7 +279,12 @@ function initGame() {
   
   // Track player eaten events
   trackPlayerEaten();
+  
+  // Adicionar log para debug
+  console.log("Game initialized, player position:", player.x, player.y);
+  console.log("Player target:", player.targetX, player.targetY);
 }
+
 
 // Update game UI (score, leaderboard)
 function updateUI() {
