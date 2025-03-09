@@ -510,3 +510,208 @@ function setupMobileControls(game, player) {
     }
   });
 }
+function setupJoystick(game, player) {
+  // Create joystick container
+  const joystickContainer = document.createElement('div');
+  joystickContainer.className = 'joystick-container';
+  joystickContainer.style.display = 'none';
+  
+  // Create joystick knob
+  const joystickKnob = document.createElement('div');
+  joystickKnob.className = 'joystick-knob';
+  joystickContainer.appendChild(joystickKnob);
+  
+  // Add to document
+  document.body.appendChild(joystickContainer);
+  
+  // Joystick state
+  let joystickActive = false;
+  let joystickStartX = 0;
+  let joystickStartY = 0;
+  let joystickCurrentX = 0;
+  let joystickCurrentY = 0;
+  const joystickMaxDistance = 40; // Maximum distance the knob can move
+  
+  // Touch start - initialize joystick
+  joystickContainer.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    
+    const touch = e.touches[0];
+    const rect = joystickContainer.getBoundingClientRect();
+    
+    joystickStartX = rect.left + rect.width / 2;
+    joystickStartY = rect.top + rect.height / 2;
+    joystickCurrentX = joystickStartX;
+    joystickCurrentY = joystickStartY;
+    
+    joystickActive = true;
+    joystickContainer.style.display = 'block';
+    
+    // Position joystick at touch location
+    joystickContainer.style.left = `${touch.clientX - rect.width / 2}px`;
+    joystickContainer.style.top = `${touch.clientY - rect.height / 2}px`;
+  });
+  
+  // Touch move - update joystick position and player movement
+  document.addEventListener('touchmove', (e) => {
+    if (!joystickActive) return;
+    e.preventDefault();
+    
+    const touch = e.touches[0];
+    joystickCurrentX = touch.clientX;
+    joystickCurrentY = touch.clientY;
+    
+    // Calculate joystick displacement
+    let deltaX = joystickCurrentX - joystickStartX;
+    let deltaY = joystickCurrentY - joystickStartY;
+    
+    // Limit displacement to max distance
+    const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+    if (distance > joystickMaxDistance) {
+      deltaX = deltaX / distance * joystickMaxDistance;
+      deltaY = deltaY / distance * joystickMaxDistance;
+    }
+    
+    // Update knob position
+    joystickKnob.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+    
+    // Calculate direction and normalize
+    if (distance > 0) {
+      const dirX = deltaX / distance;
+      const dirY = deltaY / distance;
+      
+      // Convert to world coordinates and set player target
+      const moveDistance = 200; // Adjust this value for sensitivity
+      player.targetX = player.x + dirX * moveDistance;
+      player.targetY = player.y + dirY * moveDistance;
+    }
+  });
+  
+  // Touch end - reset joystick
+  document.addEventListener('touchend', () => {
+    if (!joystickActive) return;
+    
+    joystickActive = false;
+    joystickKnob.style.transform = 'translate(0, 0)';
+    joystickContainer.style.display = 'none';
+  });
+  
+  // Show joystick when game starts
+  game.canvas.addEventListener('gameStart', () => {
+    if (game.isMobile) {
+      joystickContainer.style.display = 'block';
+    }
+  });
+  
+  // Hide joystick when game ends
+  game.canvas.addEventListener('gameStateChange', (e) => {
+    if (e.detail && e.detail.type === 'gameOver') {
+      joystickContainer.style.display = 'none';
+    }
+  });
+}
+
+function toggleFullscreen(element) {
+  if (!document.fullscreenElement) {
+    if (element.requestFullscreen) {
+      element.requestFullscreen();
+    } else if (element.webkitRequestFullscreen) {
+      element.webkitRequestFullscreen();
+    } else if (element.msRequestFullscreen) {
+      element.msRequestFullscreen();
+    }
+  } else {
+    if (document.exitFullscreen) {
+      document.exitFullscreen();
+    } else if (document.webkitExitFullscreen) {
+      document.webkitExitFullscreen();
+    } else if (document.msExitFullscreen) {
+      document.msExitFullscreen();
+    }
+  }
+}
+
+function toggleMute(game) {
+  if (game.soundManager) {
+    game.soundManager.toggleSound();
+    game.soundManager.toggleMusic();
+    game.saveSettings();
+  }
+}
+
+function toggleLeaderboard(game) {
+  const leaderboard = document.getElementById('leaderboard');
+  if (leaderboard) {
+    const isVisible = leaderboard.style.display !== 'none';
+    leaderboard.style.display = isVisible ? 'none' : 'block';
+  }
+}
+
+function toggleHelp() {
+  const helpOverlay = document.getElementById('help-overlay');
+  if (helpOverlay) {
+    helpOverlay.style.display = helpOverlay.style.display === 'none' ? 'flex' : 'none';
+  }
+}
+
+function initializeHelp() {
+  // Create help overlay if it doesn't exist
+  let helpOverlay = document.getElementById('help-overlay');
+  if (!helpOverlay) {
+    helpOverlay = document.createElement('div');
+    helpOverlay.id = 'help-overlay';
+    helpOverlay.className = 'help-overlay';
+    helpOverlay.style.display = 'none';
+    
+    helpOverlay.innerHTML = `
+      <div class="help-content">
+        <h2>Controls</h2>
+        <div class="controls-list">
+          <div class="control-item">
+            <div class="key">Mouse</div>
+            <div class="action">Move your cell</div>
+          </div>
+          <div class="control-item">
+            <div class="key">Space</div>
+            <div class="action">Split cell</div>
+          </div>
+          <div class="control-item">
+            <div class="key">W</div>
+            <div class="action">Eject mass</div>
+          </div>
+          <div class="control-item">
+            <div class="key">P / Esc</div>
+            <div class="action">Pause game</div>
+          </div>
+          <div class="control-item">
+            <div class="key">F</div>
+            <div class="action">Toggle fullscreen</div>
+          </div>
+          <div class="control-item">
+            <div class="key">M</div>
+            <div class="action">Toggle sound</div>
+          </div>
+          <div class="control-item">
+            <div class="key">Tab</div>
+            <div class="action">Show leaderboard</div>
+          </div>
+          <div class="control-item">
+            <div class="key">H</div>
+            <div class="action">Toggle help</div>
+          </div>
+        </div>
+        <button id="close-help">Close</button>
+      </div>
+    `;
+    
+    document.body.appendChild(helpOverlay);
+    
+    // Add close button event listener
+    const closeButton = document.getElementById('close-help');
+    if (closeButton) {
+      closeButton.addEventListener('click', () => {
+        helpOverlay.style.display = 'none';
+      });
+    }
+  }
+}
