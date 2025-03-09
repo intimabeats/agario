@@ -1040,31 +1040,33 @@ export class Game {
     }, 5000);
   }
   
-  updateSpatialGrid() {
-    // Clear grid
-    this.spatialGrid = {};
-    
-    // Add entities to grid
-    this.addEntitiesToGrid(this.foods, 'foods');
-    this.addEntitiesToGrid(this.viruses, 'viruses');
-    this.addEntitiesToGrid(this.powerUps, 'powerUps');
-    
-    // Add player cells to grid
-    if (this.player && !this.player.isDead) {
-      this.player.cells.forEach(cell => {
-        this.addEntityToGrid(cell.x, cell.y, cell.radius, { type: 'player', cell, parent: this.player });
-      });
-    }
-    
-    // Add AI cells to grid
-    this.ais.forEach(ai => {
-      if (!ai.isDead) {
-        ai.cells.forEach(cell => {
-          this.addEntityToGrid(cell.x, cell.y, cell.radius, { type: 'ai', cell, parent: ai });
-        });
-      }
+updateSpatialGrid() {
+  // Clear grid
+  this.spatialGrid = {};
+  
+  // Add entities to grid
+  this.addEntitiesToGrid(this.foods, 'foods');
+  this.addEntitiesToGrid(this.viruses, 'viruses');
+  this.addEntitiesToGrid(this.powerUps, 'powerUps');
+  
+  // Add player cells to grid
+  if (this.player && !this.player.isDead) {
+    this.player.cells.forEach(cell => {
+      if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius)) return;
+      this.addEntityToGrid(cell.x, cell.y, cell.radius, { type: 'player', cell, parent: this.player });
     });
   }
+  
+  // Add AI cells to grid
+  this.ais.forEach(ai => {
+    if (!ai || ai.isDead) return;
+    
+    ai.cells.forEach(cell => {
+      if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius)) return;
+      this.addEntityToGrid(cell.x, cell.y, cell.radius, { type: 'ai', cell, parent: ai });
+    });
+  });
+}
   
   addEntitiesToGrid(entities, type) {
     entities.forEach(entity => {
@@ -1101,210 +1103,268 @@ export class Game {
     }
   }
   
-  getEntitiesInRange(x, y, radius, types) {
-    // Calculate grid cell coordinates
-    const cellX = Math.floor(x / this.gridCellSize);
-    const cellY = Math.floor(y / this.gridCellSize);
-    
-    // Calculate how many cells to check in each direction
-    const cellRadius = Math.ceil(radius / this.gridCellSize);
-    
-    // Initialize result
-    const result = {};
-    types.forEach(type => {
-      result[type] = [];
-    });
-    
-    // Check grid cells in range
-    for (let i = -cellRadius; i <= cellRadius; i++) {
-      for (let j = -cellRadius; j <= cellRadius; j++) {
-        const gridX = cellX + i;
-        const gridY = cellY + j;
-        
-        // Skip invalid grid cells
-        if (gridX < 0 || gridY < 0 || 
-            gridX >= Math.ceil(this.worldSize / this.gridCellSize) || 
-            gridY >= Math.ceil(this.worldSize / this.gridCellSize)) {
-          continue;
+getEntitiesInRange(x, y, radius, types) {
+  // Validate input parameters
+  if (isNaN(x) || isNaN(y) || isNaN(radius) || !Array.isArray(types)) {
+    console.error("Invalid parameters for getEntitiesInRange:", x, y, radius, types);
+    return {};
+  }
+  
+  // Calculate grid cell coordinates
+  const cellX = Math.floor(x / this.gridCellSize);
+  const cellY = Math.floor(y / this.gridCellSize);
+  
+  // Calculate how many cells to check in each direction
+  const cellRadius = Math.ceil(radius / this.gridCellSize);
+  
+  // Initialize result
+  const result = {};
+  types.forEach(type => {
+    result[type] = [];
+  });
+  
+  // Check grid cells in range
+  for (let i = -cellRadius; i <= cellRadius; i++) {
+    for (let j = -cellRadius; j <= cellRadius; j++) {
+      const gridX = cellX + i;
+      const gridY = cellY + j;
+      
+      // Skip invalid grid cells
+      if (gridX < 0 || gridY < 0 || 
+          gridX >= Math.ceil(this.worldSize / this.gridCellSize) || 
+          gridY >= Math.ceil(this.worldSize / this.gridCellSize)) {
+        continue;
+      }
+      
+      const cellKey = `${gridX},${gridY}`;
+      
+      // Skip empty cells
+      if (!this.spatialGrid[cellKey]) continue;
+      
+      // Check entities in this cell
+      this.spatialGrid[cellKey].forEach(entity => {
+        // Skip invalid entities
+        if (!entity || !entity.type || !entity.x || !entity.y || !entity.radius) {
+          return;
         }
         
-        const cellKey = `${gridX},${gridY}`;
-        
-        // Skip empty cells
-        if (!this.spatialGrid[cellKey]) continue;
-        
-        // Check entities in this cell
-        this.spatialGrid[cellKey].forEach(entity => {
-          if (types.includes(entity.type)) {
-            // Calculate distance
-            const dx = entity.x - x;
-            const dy = entity.y - y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            // Add if in range
-            if (distance <= radius + entity.radius) {
+        if (types.includes(entity.type)) {
+          // Calculate distance
+          const dx = entity.x - x;
+          const dy = entity.y - y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          // Add if in range
+          if (distance <= radius + entity.radius) {
+            // Avoid duplicates
+            if (!result[entity.type].some(e => e === entity)) {
               result[entity.type].push(entity);
             }
           }
-        });
-      }
+        }
+      });
     }
-    
-    return result;
   }
   
-  updateVisibleEntities() {
-    // Calculate viewport bounds
-    const viewportBounds = this.getViewportBounds();
-    
-    // Update visible entities
-    this.visibleEntities.foods = this.foods.filter(food => {
-      // Check if food has checkVisibility method, otherwise use isInViewport
-      if (typeof food.checkVisibility === 'function') {
-        return food.checkVisibility(viewportBounds);
-      } else {
-        return this.isInViewport(food.x, food.y, food.radius, viewportBounds);
-      }
-    });
-    
-    this.visibleEntities.viruses = this.viruses.filter(virus => {
-      if (typeof virus.checkVisibility === 'function') {
-        return virus.checkVisibility(viewportBounds);
-      } else {
-        return this.isInViewport(virus.x, virus.y, virus.radius, viewportBounds);
-      }
-    });
-    
-    this.visibleEntities.powerUps = this.powerUps.filter(powerUp => {
-      if (typeof powerUp.checkVisibility === 'function') {
-        return powerUp.checkVisibility(viewportBounds);
-      } else {
-        return this.isInViewport(powerUp.x, powerUp.y, powerUp.radius, viewportBounds);
-      }
-    });
-    
-    // Update visible AIs
-    this.visibleEntities.ais = [];
-    this.ais.forEach(ai => {
-      if (!ai.isDead) {
-        let isVisible = false;
-        
-        // Check if any cell is visible
-        ai.cells.forEach(cell => {
-          if (this.isInViewport(cell.x, cell.y, cell.radius, viewportBounds)) {
-            isVisible = true;
-          }
-        });
-        
-        if (isVisible) {
-          this.visibleEntities.ais.push(ai);
-        }
-      }
-    });
+  return result;
+}
+  
+updateVisibleEntities() {
+  // Calculate viewport bounds
+  const viewportBounds = this.getViewportBounds();
+  
+  // Validate viewport bounds
+  if (!viewportBounds || 
+      isNaN(viewportBounds.left) || 
+      isNaN(viewportBounds.right) || 
+      isNaN(viewportBounds.top) || 
+      isNaN(viewportBounds.bottom)) {
+    console.error("Invalid viewport bounds:", viewportBounds);
+    return;
   }
+  
+  // Update visible entities
+  this.visibleEntities.foods = this.foods.filter(food => {
+    // Skip invalid foods
+    if (!food) return false;
+    
+    // Check if food has checkVisibility method, otherwise use isInViewport
+    if (typeof food.checkVisibility === 'function') {
+      return food.checkVisibility(viewportBounds);
+    } else {
+      return this.isInViewport(food.x, food.y, food.radius, viewportBounds);
+    }
+  });
+  
+  this.visibleEntities.viruses = this.viruses.filter(virus => {
+    // Skip invalid viruses
+    if (!virus) return false;
+    
+    if (typeof virus.checkVisibility === 'function') {
+      return virus.checkVisibility(viewportBounds);
+    } else {
+      return this.isInViewport(virus.x, virus.y, virus.radius, viewportBounds);
+    }
+  });
+  
+  this.visibleEntities.powerUps = this.powerUps.filter(powerUp => {
+    // Skip invalid power-ups
+    if (!powerUp) return false;
+    
+    if (typeof powerUp.checkVisibility === 'function') {
+      return powerUp.checkVisibility(viewportBounds);
+    } else {
+      return this.isInViewport(powerUp.x, powerUp.y, powerUp.radius, viewportBounds);
+    }
+  });
+  
+  // Update visible AIs
+  this.visibleEntities.ais = [];
+  this.ais.forEach(ai => {
+    if (!ai || ai.isDead) return;
+    
+    let isVisible = false;
+    
+    // Check if any cell is visible
+    ai.cells.forEach(cell => {
+      if (this.isInViewport(cell.x, cell.y, cell.radius, viewportBounds)) {
+        isVisible = true;
+      }
+    });
+    
+    if (isVisible) {
+      this.visibleEntities.ais.push(ai);
+    }
+  });
+}
   
   getViewportBounds() {
-    const halfWidth = this.width / (2 * this.camera.scale);
-    const halfHeight = this.height / (2 * this.camera.scale);
-    
+  // Validate camera properties
+  if (!this.camera || isNaN(this.camera.x) || isNaN(this.camera.y) || isNaN(this.camera.scale)) {
+    console.error("Invalid camera for viewport calculation:", this.camera);
     return {
-      left: this.camera.x - halfWidth,
-      right: this.camera.x + halfWidth,
-      top: this.camera.y - halfHeight,
-      bottom: this.camera.y + halfHeight
+      left: 0,
+      right: this.worldSize,
+      top: 0,
+      bottom: this.worldSize
     };
   }
   
-  isInViewport(x, y, radius, viewportBounds) {
-    const { left, right, top, bottom } = viewportBounds || this.getViewportBounds();
-    
-    return (
-      x + radius > left &&
-      x - radius < right &&
-      y + radius > top &&
-      y - radius < bottom
-    );
+  const halfWidth = this.width / (2 * this.camera.scale);
+  const halfHeight = this.height / (2 * this.camera.scale);
+  
+  return {
+    left: this.camera.x - halfWidth,
+    right: this.camera.x + halfWidth,
+    top: this.camera.y - halfHeight,
+    bottom: this.camera.y + halfHeight
+  };
+}
+  
+isInViewport(x, y, radius, viewportBounds) {
+  // Validate parameters
+  if (isNaN(x) || isNaN(y) || isNaN(radius)) {
+    return false;
   }
   
-  centerCamera() {
-    if (!this.player) return;
-    
-    // Verify player coordinates are valid
-    if (isNaN(this.player.x) || isNaN(this.player.y)) {
-      console.error("Invalid player coordinates for camera centering:", this.player.x, this.player.y);
+  const bounds = viewportBounds || this.getViewportBounds();
+  
+  // Validate bounds
+  if (!bounds || 
+      isNaN(bounds.left) || 
+      isNaN(bounds.right) || 
+      isNaN(bounds.top) || 
+      isNaN(bounds.bottom)) {
+    return false;
+  }
+  
+  return (
+    x + radius > bounds.left &&
+    x - radius < bounds.right &&
+    y + radius > bounds.top &&
+    y - radius < bounds.bottom
+  );
+}
+  
+centerCamera() {
+  if (!this.player) return;
+  
+  // Verify player coordinates are valid
+  if (isNaN(this.player.x) || isNaN(this.player.y)) {
+    console.error("Invalid player coordinates for camera centering:", this.player.x, this.player.y);
+    return;
+  }
+  
+  // Calculate target camera position (center of mass of player cells)
+  let totalX = 0;
+  let totalY = 0;
+  let totalMass = 0;
+  let validCells = 0;
+  
+  this.player.cells.forEach(cell => {
+    // Verify cell coordinates and mass are valid
+    if (isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
       return;
     }
     
-    // Calculate target camera position (center of mass of player cells)
-    let totalX = 0;
-    let totalY = 0;
-    let totalMass = 0;
-    let validCells = 0;
+    totalX += cell.x * cell.mass;
+    totalY += cell.y * cell.mass;
+    totalMass += cell.mass;
+    validCells++;
+  });
+  
+  // If no valid cells, use player position
+  if (validCells === 0 || totalMass <= 0) {
+    this.camera.x = this.player.x;
+    this.camera.y = this.player.y;
+  } else {
+    const targetX = totalX / totalMass;
+    const targetY = totalY / totalMass;
     
-    this.player.cells.forEach(cell => {
-      // Verify cell coordinates and mass are valid
-      if (isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
-        return;
-      }
-      
-      totalX += cell.x * cell.mass;
-      totalY += cell.y * cell.mass;
-      totalMass += cell.mass;
-      validCells++;
-    });
+    // Verify calculated coordinates are valid
+    if (isNaN(targetX) || isNaN(targetY)) {
+      console.error("Invalid camera target calculated:", totalX, totalY, totalMass);
+      return;
+    }
     
-    // If no valid cells, use player position
-    if (validCells === 0 || totalMass <= 0) {
-      this.camera.x = this.player.x;
-      this.camera.y = this.player.y;
+    // Smooth camera movement
+    if (isNaN(this.camera.x) || isNaN(this.camera.y)) {
+      this.camera.x = targetX;
+      this.camera.y = targetY;
     } else {
-      const targetX = totalX / totalMass;
-      const targetY = totalY / totalMass;
-      
-      // Verify calculated coordinates are valid
-      if (isNaN(targetX) || isNaN(targetY)) {
-        console.error("Invalid camera target calculated:", totalX, totalY, totalMass);
-        return;
-      }
-      
-      // Smooth camera movement
-      if (isNaN(this.camera.x) || isNaN(this.camera.y)) {
-        this.camera.x = targetX;
-        this.camera.y = targetY;
-      } else {
-        this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
-        this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
-      }
-    }
-    
-    // Calculate camera scale based on player size
-    if (this.player.cells.length > 0) {
-      const largestCell = this.player.cells.reduce((largest, cell) => 
-        cell.radius > largest.radius ? cell : largest, this.player.cells[0]);
-      
-      // Scale inversely with player size, but with limits
-      const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestCell.radius));
-      
-      // Smooth scale transition
-      if (isNaN(this.camera.scale)) {
-        this.camera.scale = targetScale;
-      } else {
-        this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
-      }
-    }
-    
-    // Keep camera within world bounds
-    this.camera.x = Math.max(this.cameraBounds.minX, Math.min(this.cameraBounds.maxX, this.camera.x));
-    this.camera.y = Math.max(this.cameraBounds.minY, Math.min(this.cameraBounds.maxY, this.camera.y));
-    
-    // Verify final camera values are valid
-    if (isNaN(this.camera.x) || isNaN(this.camera.y) || isNaN(this.camera.scale)) {
-      console.error("Invalid camera values after centering:", this.camera.x, this.camera.y, this.camera.scale);
-      this.camera.x = this.worldSize / 2;
-      this.camera.y = this.worldSize / 2;
-      this.camera.scale = 1.0;
+      this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
+      this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
     }
   }
+  
+  // Calculate camera scale based on player size
+  if (this.player.cells.length > 0) {
+    const largestCell = this.player.cells.reduce((largest, cell) => 
+      cell.radius > largest.radius ? cell : largest, this.player.cells[0]);
+    
+    // Scale inversely with player size, but with limits
+    const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestCell.radius));
+    
+    // Smooth scale transition
+    if (isNaN(this.camera.scale)) {
+      this.camera.scale = targetScale;
+    } else {
+      this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
+    }
+  }
+  
+  // Keep camera within world bounds
+  this.camera.x = Math.max(this.cameraBounds.minX, Math.min(this.cameraBounds.maxX, this.camera.x));
+  this.camera.y = Math.max(this.cameraBounds.minY, Math.min(this.cameraBounds.maxY, this.camera.y));
+  
+  // Verify final camera values are valid
+  if (isNaN(this.camera.x) || isNaN(this.camera.y) || isNaN(this.camera.scale)) {
+    console.error("Invalid camera values after centering:", this.camera.x, this.camera.y, this.camera.scale);
+    this.camera.x = this.worldSize / 2;
+    this.camera.y = this.worldSize / 2;
+    this.camera.scale = 1.0;
+  }
+}
   
   render() {
     // Performance measurement

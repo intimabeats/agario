@@ -425,8 +425,6 @@ moveTowardsTarget(deltaTime) {
     return;
   }
   
-  console.log("Moving towards target:", this.targetX, this.targetY, "Current:", this.x, this.y);
-  
   // Calculate movement for each cell with improved physics
   this.cells.forEach((cell, index) => {
     // Verificar se a célula é válida
@@ -470,8 +468,6 @@ moveTowardsTarget(deltaTime) {
       console.error("Invalid distance:", distance);
       return;
     }
-    
-    console.log("Cell distance to target:", distance);
     
     if (distance > 0) {
       // Calculate speed based on cell size
@@ -518,8 +514,6 @@ moveTowardsTarget(deltaTime) {
       cell.velocityX = newVelocityX;
       cell.velocityY = newVelocityY;
       
-      console.log("Cell velocity:", cell.velocityX, cell.velocityY);
-      
       // Apply velocity
       const newX = cell.x + cell.velocityX * deltaTime;
       const newY = cell.y + cell.velocityY * deltaTime;
@@ -549,21 +543,6 @@ moveTowardsTarget(deltaTime) {
   
   // Update player position to the center of mass
   this.updateCenterOfMass();
-  
-  // Verificar se as coordenadas atualizadas são válidas
-  if (isNaN(this.x) || isNaN(this.y)) {
-    console.error("Invalid position after updateCenterOfMass");
-    this.x = this.game.worldSize / 2;
-    this.y = this.game.worldSize / 2;
-    
-    // Reiniciar células
-    this.cells.forEach(cell => {
-      cell.x = this.x;
-      cell.y = this.y;
-    });
-  }
-  
-  console.log("After movement, player position:", this.x, this.y);
 }
 
 updateCenterOfMass() {
@@ -696,7 +675,6 @@ checkFoodCollisions(foods) {
   });
 }
 
-// Correção do arquivo player.js - Função checkVirusCollisions
 checkVirusCollisions(viruses) {
   if (!viruses || !viruses.length) return;
   

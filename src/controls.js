@@ -393,6 +393,12 @@ export function setupControls(game, player) {
 }
 
 function updateMovementFromKeys(player, keyState) {
+  // Skip if player is invalid
+  if (!player) {
+    console.error("Invalid player for key movement");
+    return;
+  }
+  
   // Skip if no directional keys are pressed
   if (!keyState.up && !keyState.down && !keyState.left && !keyState.right && 
       !keyState.w && !keyState.a && !keyState.s && !keyState.d) {
@@ -422,21 +428,43 @@ function updateMovementFromKeys(player, keyState) {
     
     // Set player target relative to current position
     const moveDistance = 200; // Adjust this value for sensitivity
+    
+    // Verify player position is valid
+    if (isNaN(player.x) || isNaN(player.y)) {
+      console.error("Invalid player position for key movement:", player.x, player.y);
+      return;
+    }
+    
     player.targetX = player.x + dirX * moveDistance;
     player.targetY = player.y + dirY * moveDistance;
+    
+    // Verify target is valid
+    if (isNaN(player.targetX) || isNaN(player.targetY)) {
+      console.error("Invalid target position from key movement:", player.targetX, player.targetY);
+      player.targetX = player.x;
+      player.targetY = player.y;
+    }
   }
 }
 
 function setupMobileControls(game, player) {
-  // Create mobile control container
-  const mobileControls = document.createElement('div');
-  mobileControls.id = 'mobile-controls';
-  mobileControls.style.position = 'absolute';
-  mobileControls.style.bottom = '20px';
-  mobileControls.style.left = '20px';
-  mobileControls.style.zIndex = '100';
-  mobileControls.style.display = 'flex';
-  mobileControls.style.gap = '10px';
+  // Create mobile control container if it doesn't exist
+  let mobileControls = document.getElementById('mobile-controls');
+  if (!mobileControls) {
+    mobileControls = document.createElement('div');
+    mobileControls.id = 'mobile-controls';
+    mobileControls.style.position = 'absolute';
+    mobileControls.style.bottom = '20px';
+    mobileControls.style.left = '20px';
+    mobileControls.style.zIndex = '100';
+    mobileControls.style.display = 'flex';
+    mobileControls.style.gap = '10px';
+    
+    document.body.appendChild(mobileControls);
+  }
+  
+  // Clear existing controls
+  mobileControls.innerHTML = '';
   
   // Split button
   const splitButton = document.createElement('button');
@@ -445,7 +473,9 @@ function setupMobileControls(game, player) {
   
   splitButton.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    player.split();
+    if (player && typeof player.split === 'function') {
+      player.split();
+    }
   });
   
   // Eject mass button
@@ -458,17 +488,19 @@ function setupMobileControls(game, player) {
   
   ejectButton.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    player.ejectMass(); // Eject immediately on first touch
-    
-    // Set up interval for continuous ejection
-    ejectTouchInterval = setInterval(() => {
-      if (!game.isGameOver && !game.isPaused) {
-        player.ejectMass();
-      } else {
-        clearInterval(ejectTouchInterval);
-        ejectTouchInterval = null;
-      }
-    }, 100); // Eject every 100ms while touched
+    if (player && typeof player.ejectMass === 'function') {
+      player.ejectMass(); // Eject immediately on first touch
+      
+      // Set up interval for continuous ejection
+      ejectTouchInterval = setInterval(() => {
+        if (!game.isGameOver && !game.isPaused && player && typeof player.ejectMass === 'function') {
+          player.ejectMass();
+        } else {
+          clearInterval(ejectTouchInterval);
+          ejectTouchInterval = null;
+        }
+      }, 100); // Eject every 100ms while touched
+    }
   });
   
   ejectButton.addEventListener('touchend', () => {
@@ -481,9 +513,6 @@ function setupMobileControls(game, player) {
   // Add buttons to container
   mobileControls.appendChild(splitButton);
   mobileControls.appendChild(ejectButton);
-  
-  // Add container to document
-  document.body.appendChild(mobileControls);
   
   // Add joystick for mobile devices
   setupJoystick(game, player);
