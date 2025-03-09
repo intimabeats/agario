@@ -432,82 +432,82 @@ export class Virus {
   }
   
   // Handle collision with a cell
-  handleCollision(cell, player) {
-    const dx = cell.x - this.x;
-    const dy = cell.y - this.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // If cell is touching the virus
-    if (distance < cell.radius + this.radius) {
-      // If cell is large enough to consume the virus
-      if (this.canBeConsumedBy(cell.radius)) {
-        // Add virus mass to the cell
-        const virusMass = this.mass * 0.5; // Only get half the mass
-        cell.mass += virusMass;
-        cell.radius = Math.sqrt(cell.mass / Math.PI);
-        
-        // Add experience to player
-        if (player) {
-          player.addExperience(50);
-        }
-        
-        // Create particles
-        if (this.game.particles) {
-          this.game.particles.createVirusParticles(this.x, this.y);
-        }
-        
-        // Play sound
-        if (this.game.soundManager) {
-          this.game.soundManager.playSound('virusSplit');
-        }
-        
-        // Split the cell in multiple directions
-        if (player && player.cells.length < 16) {
-          // Find the index of the cell in player's cells array
-          const cellIndex = player.cells.findIndex(c => c === cell);
-          if (cellIndex !== -1) {
-            // Split in multiple directions
-            const splitDirections = 3 + Math.floor(Math.random() * 2); // 3-4 splits
-            for (let i = 0; i < splitDirections; i++) {
-              const angle = (i / splitDirections) * Math.PI * 2;
-              const targetX = this.x + Math.cos(angle) * this.radius * 2;
-              const targetY = this.y + Math.sin(angle) * this.radius * 2;
-              player.splitCell(cellIndex, targetX, targetY);
-            }
+handleCollision(cell, player) {
+  const dx = cell.x - this.x;
+  const dy = cell.y - this.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  
+  // If cell is touching the virus
+  if (distance < cell.radius + this.radius) {
+    // If cell is large enough to consume the virus
+    if (this.canBeConsumedBy(cell.radius)) {
+      // Add virus mass to the cell
+      const virusMass = this.mass * 0.5; // Only get half the mass
+      cell.mass += virusMass;
+      cell.radius = Math.sqrt(cell.mass / Math.PI);
+      
+      // Add experience to player
+      if (player) {
+        player.addExperience(50);
+      }
+      
+      // Create particles
+      if (this.game.particles) {
+        this.game.particles.createVirusParticles(this.x, this.y);
+      }
+      
+      // Play sound
+      if (this.game.soundManager) {
+        this.game.soundManager.playSound('virusSplit');
+      }
+      
+      // Split the cell in multiple directions
+      if (player && player.cells.length < 16) {
+        // Find the index of the cell in player's cells array
+        const cellIndex = player.cells.findIndex(c => c === cell);
+        if (cellIndex !== -1) {
+          // Split in multiple directions
+          const splitDirections = 3 + Math.floor(Math.random() * 2); // 3-4 splits
+          for (let i = 0; i < splitDirections; i++) {
+            const angle = (i / splitDirections) * Math.PI * 2;
+            const targetX = this.x + Math.cos(angle) * this.radius * 2;
+            const targetY = this.y + Math.sin(angle) * this.radius * 2;
+            player.splitCell(cellIndex, targetX, targetY);
           }
         }
-        
-        // Remove the virus
-        return true;
-      } 
-      // If cell is small enough to pass under
-      else if (this.canPassUnder(cell.radius)) {
-        // Set z-index to pass under
-        cell.z = -1;
-        
-        // Reset z-index after a delay
-        setTimeout(() => {
-          if (cell) cell.z = 0;
-        }, 1000);
-        
-        return false;
-      } 
-      // Cell is neither big enough to consume nor small enough to pass under
-      else {
-        // Just push the cell away slightly
-        const pushFactor = 0.5;
-        const pushX = (dx / distance) * pushFactor;
-        const pushY = (dy / distance) * pushFactor;
-        
-        cell.x += pushX;
-        cell.y += pushY;
-        
-        return false;
       }
+      
+      // Remove the virus
+      return true;
+    } 
+    // If cell is small enough to pass under
+    else if (this.canPassUnder(cell.radius)) {
+      // Set z-index to pass under
+      cell.z = -1;
+      
+      // Reset z-index after a delay
+      setTimeout(() => {
+        if (cell) cell.z = 0;
+      }, 1000);
+      
+      return false;
+    } 
+    // Cell is neither big enough to consume nor small enough to pass under
+    else {
+      // Just push the cell away slightly
+      const pushFactor = 0.5;
+      const pushX = (dx / distance) * pushFactor;
+      const pushY = (dy / distance) * pushFactor;
+      
+      cell.x += pushX;
+      cell.y += pushY;
+      
+      return false;
     }
-    
-    return false;
   }
+  
+  return false;
+}
   
   draw(ctx) {
     // Skip drawing if not visible (optimization)

@@ -354,72 +354,89 @@ export class Game {
     });
   }
   
-  setPlayer(player) {
-    this.player = player;
-    
-    // Ensure player's initial position is valid
-    player.x = this.worldSize / 2; // Start at center of map
-    player.y = this.worldSize / 2; // Start at center of map
-    player.targetX = player.x;
-    player.targetY = player.y;
-    
-    // Initialize player's cells with correct position
-    if (player.cells.length > 0) {
-      player.cells[0].x = player.x;
-      player.cells[0].y = player.y;
-      player.cells[0].velocityX = 0;
-      player.cells[0].velocityY = 0;
-    } else {
-      // Create a cell if none exists
-      player.cells.push({
-        x: player.x,
-        y: player.y,
-        radius: player.baseRadius,
-        mass: Math.PI * player.baseRadius * player.baseRadius,
-        velocityX: 0,
-        velocityY: 0,
-        membrane: {
-          points: 20,
-          elasticity: 0.3,
-          distortion: 0.15,
-          oscillation: 0.05,
-          oscillationSpeed: 1.5,
-          phase: Math.random() * Math.PI * 2,
-          vertices: []
-        },
-        z: 0,
-        id: 'cell-' + Date.now() + '-0',
-        effects: []
-      });
+setPlayer(player) {
+  this.player = player;
+  
+  // Ensure player's initial position is valid and centered in the world
+  player.x = this.worldSize / 2; // Start at center of map
+  player.y = this.worldSize / 2; // Start at center of map
+  player.targetX = player.x;
+  player.targetY = player.y;
+  
+  // Initialize player's cells with correct position
+  if (player.cells.length > 0) {
+    // Update all cells with the correct position
+    player.cells.forEach(cell => {
+      cell.x = player.x;
+      cell.y = player.y;
       
-      // Initialize the cell membrane
-      player.initCellMembranes();
-    }
+      // Ensure velocities are initialized
+      if (cell.velocityX === undefined) cell.velocityX = 0;
+      if (cell.velocityY === undefined) cell.velocityY = 0;
+      
+      // Ensure radius and mass are valid
+      if (isNaN(cell.radius) || cell.radius <= 0) {
+        cell.radius = player.baseRadius;
+        cell.mass = Math.PI * cell.radius * cell.radius;
+      }
+    });
+  } else {
+    // Create a cell if none exists
+    player.cells.push({
+      x: player.x,
+      y: player.y,
+      radius: player.baseRadius,
+      mass: Math.PI * player.baseRadius * player.baseRadius,
+      velocityX: 0,
+      velocityY: 0,
+      membrane: {
+        points: 20,
+        elasticity: 0.3,
+        distortion: 0.15,
+        oscillation: 0.05,
+        oscillationSpeed: 1.5,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      },
+      z: 0,
+      id: 'cell-' + Date.now() + '-0',
+      effects: []
+    });
     
-    // Center camera on player
-    this.centerCamera();
-    
-    // Add player to team in team mode
-    if (this.gameMode === 'teams') {
-      const teamNames = Object.keys(this.teams);
-      const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
-      this.teams[teamName].players.push(player);
-      player.team = teamName;
-      player.color = this.getTeamColor(teamName);
-    }
-    
-    // Apply balance settings to player
-    player.baseSpeed = this.balanceSettings.playerBaseSpeed;
-    player.splitVelocity = this.balanceSettings.playerSplitVelocity;
-    player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
-    player.growthRate = this.balanceSettings.playerGrowthRate;
-    player.shrinkRate = this.balanceSettings.playerShrinkRate;
-    
-    // Initialize player achievements
-    this.achievements.initPlayer(player);
-    
-    console.log("Player set in game:", player.x, player.y, "Target:", player.targetX, player.targetY);
+    // Initialize the cell membrane
+    player.initCellMembranes();
   }
+  
+  // Center camera on player
+  this.centerCamera();
+  
+  // Add player to team in team mode
+  if (this.gameMode === 'teams') {
+    const teamNames = Object.keys(this.teams);
+    const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
+    this.teams[teamName].players.push(player);
+    player.team = teamName;
+    player.color = this.getTeamColor(teamName);
+  }
+  
+  // Apply balance settings to player
+  player.baseSpeed = this.balanceSettings.playerBaseSpeed;
+  player.splitVelocity = this.balanceSettings.playerSplitVelocity;
+  player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
+  player.growthRate = this.balanceSettings.playerGrowthRate;
+  player.shrinkRate = this.balanceSettings.playerShrinkRate;
+  
+  // Initialize player achievements
+  this.achievements.initPlayer(player);
+  
+  // Log player position for debugging
+  console.log("Player set in game:", player.x, player.y, "Target:", player.targetX, player.targetY);
+  
+  // Verify cell coordinates
+  if (player.cells.length > 0) {
+    console.log("Cell coordinates:", player.cells[0].x, player.cells[0].y);
+  }
+}
   
   getTeamColor(teamName) {
     return this.teams[teamName]?.color || '#ffffff';
@@ -604,6 +621,34 @@ export class Game {
   }
   
   update(deltaTime) {
+		  if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
+    console.error("Invalid player coordinates detected in update:", this.x, this.y, this.targetX, this.targetY);
+    // Reiniciar coordenadas para valores válidos
+    this.x = this.game.worldSize / 2;
+    this.y = this.game.worldSize / 2;
+    this.targetX = this.x;
+    this.targetY = this.y;
+    
+    // Reiniciar células
+    this.cells.forEach(cell => {
+      cell.x = this.x;
+      cell.y = this.y;
+      cell.velocityX = 0;
+      cell.velocityY = 0;
+    });
+  }
+  
+  // Track time played
+  this.stats.timePlayed += deltaTime;
+  
+  // Skip frames for performance if needed
+  if (this.skipFrames > 0) {
+    this.skipFrames--;
+    return;
+  }
+  
+  // Move towards target
+  this.moveTowardsTarget(deltaTime);
     // Scale delta time by time scale (for slow-motion effects)
     const scaledDeltaTime = deltaTime * this.timeScale;
     
