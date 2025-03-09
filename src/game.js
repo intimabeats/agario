@@ -5,6 +5,10 @@ import { PowerUp } from './powerup.js';
 import { ParticleSystem } from './particles.js';
 import { SoundManager } from './sound.js';
 import { MiniMap } from './minimap.js';
+import { Storage } from './storage.js';
+import { Achievements } from './achievements.js';
+import { Skins } from './skins.js';
+import { Leaderboard } from './leaderboard.js';
 
 export class Game {
   constructor(canvas) {
@@ -23,23 +27,38 @@ export class Game {
     this.isPaused = false;
     this.gameTime = 0;
     this.lastUpdateTime = Date.now();
+    this.frameCount = 0;
+    this.fps = 0;
+    this.fpsUpdateTime = 0;
+    this.targetFPS = 60;
+    this.frameInterval = 1000 / this.targetFPS;
+    this.accumulator = 0;
     
     // World properties
     this.worldSize = 6000;
     this.gridSize = 50;
     this.camera = { x: 0, y: 0, scale: 1 };
     this.cameraSmoothing = 0.1; // Camera smoothing factor
+    this.cameraBounds = {
+      minX: 0,
+      minY: 0,
+      maxX: this.worldSize,
+      maxY: this.worldSize
+    };
     
     // Game settings
     this.foodCount = 1000;
     this.aiCount = 20;
     this.virusCount = 25;
     this.powerUpCount = 12;
+    this.maxCellsPerPlayer = 16;
+    this.maxMass = 10000; // Maximum mass a cell can have
     
     // Physics settings
     this.cellCollisionElasticity = 0.7;
-    this.cellRepulsionForce = 0.05; // Reduced for better overlapping
+    this.cellRepulsionForce = 0.05;
     this.foodAttractionRadius = 5;
+    this.timeScale = 1.0; // For slow-motion effects
     
     // Visual effects
     this.particles = new ParticleSystem(this);
@@ -55,11 +74,16 @@ export class Game {
       frameCount: 0,
       lastFpsUpdate: 0,
       entitiesRendered: 0,
-      collisionsChecked: 0
+      collisionsChecked: 0,
+      updateTime: 0,
+      renderTime: 0,
+      physicsTime: 0,
+      aiTime: 0
     };
     
     // Animation frame
     this.animationId = null;
+    this.lastFrameTime = 0;
     
     // Game modes
     this.gameMode = 'classic'; // classic, battle-royale, teams
@@ -71,14 +95,17 @@ export class Game {
       shrinkStartTime: 0,
       shrinkDuration: 60000, // 1 minute
       minRadius: 500,
-      damagePerSecond: 5
+      damagePerSecond: 5,
+      warningTime: 10000, // 10 seconds warning before shrink
+      isWarning: false,
+      nextShrinkTime: 0
     };
     
     // Teams
     this.teams = {
-      red: { score: 0, players: [] },
-      blue: { score: 0, players: [] },
-      green: { score: 0, players: [] }
+      red: { score: 0, players: [], color: '#ff5252' },
+      blue: { score: 0, players: [], color: '#2196f3' },
+      green: { score: 0, players: [], color: '#4caf50' }
     };
     
     // Spatial partitioning for collision detection optimization
@@ -108,24 +135,190 @@ export class Game {
       // AI settings
       aiBaseSpeed: 4.5,
       aiAggressionMultiplier: 1.2,
+      aiSpawnRate: 1.0,
       
       // Player settings
       playerBaseSpeed: 6.5,
       playerSplitVelocity: 18,
       playerEjectSpeed: 35,
+      playerGrowthRate: 1.5,
+      playerShrinkRate: 0.005,
       
       // Food settings
       foodValue: 1.0,
       foodSpawnRate: 1.0,
+      foodMaxSize: 12,
       
       // Virus settings
       virusSpawnRate: 1.0,
       virusSplitForce: 1.0,
+      virusMaxCount: 25,
       
       // Power-up settings
       powerUpSpawnRate: 1.0,
-      powerUpDuration: 1.0
+      powerUpDuration: 1.0,
+      powerUpMaxCount: 12,
+      
+      // Physics settings
+      frictionCoefficient: 0.02,
+      elasticityCoefficient: 0.7,
+      
+      // Game difficulty
+      difficultyLevel: 2, // 1-5, affects AI behavior and spawn rates
+      
+      // Experience and leveling
+      expMultiplier: 1.0,
+      levelUpRequirement: 1000
     };
+    
+    // Difficulty presets
+    this.difficultyPresets = {
+      easy: {
+        aiAggressionMultiplier: 0.8,
+        aiSpawnRate: 0.7,
+        playerGrowthRate: 1.8,
+        playerShrinkRate: 0.003,
+        expMultiplier: 1.2
+      },
+      normal: {
+        aiAggressionMultiplier: 1.2,
+        aiSpawnRate: 1.0,
+        playerGrowthRate: 1.5,
+        playerShrinkRate: 0.005,
+        expMultiplier: 1.0
+      },
+      hard: {
+        aiAggressionMultiplier: 1.5,
+        aiSpawnRate: 1.3,
+        playerGrowthRate: 1.2,
+        playerShrinkRate: 0.007,
+        expMultiplier: 0.8
+      }
+    };
+    
+    // Initialize additional systems
+    this.storage = new Storage();
+    this.achievements = new Achievements(this);
+    this.skins = new Skins();
+    this.leaderboard = new Leaderboard();
+    
+    // Load saved settings
+    this.loadSettings();
+    
+    // Debug mode
+    this.debugMode = false;
+    
+    // Mobile detection
+    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    // Event listeners
+    this.setupEventListeners();
+  }
+  
+  setupEventListeners() {
+    // Listen for visibility change to pause game when tab is inactive
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden && !this.isGameOver) {
+        this.isPaused = true;
+        const pauseMenu = document.getElementById('pause-menu');
+        if (pauseMenu) {
+          pauseMenu.style.display = 'block';
+        }
+      }
+    });
+    
+    // Listen for resize events
+    window.addEventListener('resize', () => {
+      this.updateViewport();
+    });
+    
+    // Listen for fullscreen change
+    document.addEventListener('fullscreenchange', () => {
+      this.updateViewport();
+    });
+    
+    // Custom event for game state changes
+    this.canvas.addEventListener('gameStateChange', (e) => {
+      if (e.detail && e.detail.type === 'gameOver') {
+        this.handleGameOver(e.detail.data);
+      }
+    });
+  }
+  
+  loadSettings() {
+    const savedSettings = this.storage.getSettings();
+    if (savedSettings) {
+      // Apply saved settings
+      if (savedSettings.soundEnabled !== undefined) {
+        this.soundManager.soundEnabled = savedSettings.soundEnabled;
+      }
+      if (savedSettings.musicEnabled !== undefined) {
+        this.soundManager.musicEnabled = savedSettings.musicEnabled;
+      }
+      if (savedSettings.soundVolume !== undefined) {
+        this.soundManager.setVolume(savedSettings.soundVolume);
+      }
+      if (savedSettings.musicVolume !== undefined) {
+        this.soundManager.setMusicVolume(savedSettings.musicVolume);
+      }
+      if (savedSettings.difficulty !== undefined) {
+        this.setDifficulty(savedSettings.difficulty);
+      }
+    }
+  }
+  
+  saveSettings() {
+    const settings = {
+      soundEnabled: this.soundManager.soundEnabled,
+      musicEnabled: this.soundManager.musicEnabled,
+      soundVolume: this.soundManager.volume,
+      musicVolume: this.soundManager.musicVolume,
+      difficulty: this.balanceSettings.difficultyLevel
+    };
+    this.storage.saveSettings(settings);
+  }
+  
+  setDifficulty(level) {
+    let preset;
+    switch(level) {
+      case 1:
+        preset = this.difficultyPresets.easy;
+        break;
+      case 3:
+        preset = this.difficultyPresets.hard;
+        break;
+      case 2:
+      default:
+        preset = this.difficultyPresets.normal;
+        break;
+    }
+    
+    this.balanceSettings.difficultyLevel = level;
+    this.balanceSettings.aiAggressionMultiplier = preset.aiAggressionMultiplier;
+    this.balanceSettings.aiSpawnRate = preset.aiSpawnRate;
+    this.balanceSettings.playerGrowthRate = preset.playerGrowthRate;
+    this.balanceSettings.playerShrinkRate = preset.playerShrinkRate;
+    this.balanceSettings.expMultiplier = preset.expMultiplier;
+    
+    // Apply to existing entities
+    this.applyBalanceSettings();
+  }
+  
+  applyBalanceSettings() {
+    // Apply to player if exists
+    if (this.player) {
+      this.player.baseSpeed = this.balanceSettings.playerBaseSpeed;
+      this.player.splitVelocity = this.balanceSettings.playerSplitVelocity;
+      this.player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
+      this.player.growthRate = this.balanceSettings.playerGrowthRate;
+      this.player.shrinkRate = this.balanceSettings.playerShrinkRate;
+    }
+    
+    // Apply to AIs
+    this.ais.forEach(ai => {
+      ai.baseSpeed = this.balanceSettings.aiBaseSpeed;
+      ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
+    });
   }
   
   setPlayer(player) {
@@ -140,21 +333,45 @@ export class Game {
       player.team = teamName;
       player.color = this.getTeamColor(teamName);
     }
+    
+    // Apply balance settings to player
+    player.baseSpeed = this.balanceSettings.playerBaseSpeed;
+    player.splitVelocity = this.balanceSettings.playerSplitVelocity;
+    player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
+    player.growthRate = this.balanceSettings.playerGrowthRate;
+    player.shrinkRate = this.balanceSettings.playerShrinkRate;
+    
+    // Initialize player achievements
+    this.achievements.initPlayer(player);
   }
   
   getTeamColor(teamName) {
-    switch (teamName) {
-      case 'red': return '#ff5252';
-      case 'blue': return '#2196f3';
-      case 'green': return '#4caf50';
-      default: return '#ffffff';
-    }
+    return this.teams[teamName]?.color || '#ffffff';
   }
   
   start() {
     this.generateWorld();
+    this.lastUpdateTime = Date.now();
+    this.lastFrameTime = performance.now();
     this.gameLoop();
     this.soundManager.playBackgroundMusic();
+    
+    // Show tutorial for new players
+    if (this.storage.isFirstTime()) {
+      this.showTutorial();
+    }
+    
+    // Trigger game start event
+    const event = new CustomEvent('gameStart', { detail: { gameMode: this.gameMode } });
+    this.canvas.dispatchEvent(event);
+  }
+  
+  showTutorial() {
+    // Implementation will be in tutorial.js
+    const tutorialElement = document.getElementById('tutorial');
+    if (tutorialElement) {
+      tutorialElement.style.display = 'block';
+    }
   }
   
   stop() {
@@ -163,6 +380,36 @@ export class Game {
       this.animationId = null;
     }
     this.soundManager.stopBackgroundMusic();
+    
+    // Save game stats
+    this.saveGameStats();
+    
+    // Trigger game end event
+    const event = new CustomEvent('gameEnd', { 
+      detail: { 
+        score: this.player ? this.player.score : 0,
+        level: this.player ? this.player.level : 1,
+        gameTime: this.gameTime
+      } 
+    });
+    this.canvas.dispatchEvent(event);
+  }
+  
+  saveGameStats() {
+    if (!this.player) return;
+    
+    const stats = {
+      score: Math.floor(this.player.score),
+      level: this.player.level,
+      playTime: this.gameTime,
+      foodEaten: this.player.stats.foodEaten,
+      playersEaten: this.player.stats.playersEaten,
+      maxSize: Math.floor(this.player.stats.maxSize),
+      date: new Date().toISOString()
+    };
+    
+    this.storage.saveGameStats(stats);
+    this.leaderboard.submitScore(this.player.name, Math.floor(this.player.score));
   }
   
   generateWorld() {
@@ -218,46 +465,59 @@ export class Game {
     }
   }
   
-  gameLoop() {
-    const now = Date.now();
-    const deltaTime = (now - this.lastUpdateTime) / 1000; // Convert to seconds
-    this.lastUpdateTime = now;
+  gameLoop(timestamp) {
+    // Calculate delta time
+    if (!timestamp) timestamp = performance.now();
+    const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
+    this.lastFrameTime = timestamp;
+    
+    // Cap delta time to prevent large jumps
+    const cappedDeltaTime = Math.min(deltaTime, 0.1);
     
     // Update game time
-    this.gameTime += deltaTime;
+    this.gameTime += cappedDeltaTime;
     
     // Update FPS counter
-    this.stats.frameCount++;
-    if (now - this.stats.lastFpsUpdate > 1000) {
-      this.stats.fps = this.stats.frameCount;
-      this.stats.frameCount = 0;
-      this.stats.lastFpsUpdate = now;
-      
-      // Reset stats
-      this.stats.entitiesRendered = 0;
-      this.stats.collisionsChecked = 0;
+    this.frameCount++;
+    if (timestamp - this.fpsUpdateTime > 1000) {
+      this.fps = this.frameCount;
+      this.frameCount = 0;
+      this.fpsUpdateTime = timestamp;
     }
     
+    // Skip update if paused
     if (this.isPaused) {
-      this.animationId = requestAnimationFrame(() => this.gameLoop());
+      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
       return;
     }
     
-    this.update(deltaTime);
+    // Fixed time step for physics
+    this.accumulator += cappedDeltaTime;
+    while (this.accumulator >= 1 / this.targetFPS) {
+      this.update(1 / this.targetFPS);
+      this.accumulator -= 1 / this.targetFPS;
+    }
+    
+    // Render at display refresh rate
     this.render();
     
     // Process removal queues
     this.processRemovalQueues();
     
     if (!this.isGameOver) {
-      this.animationId = requestAnimationFrame(() => this.gameLoop());
+      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
     }
   }
-  
   update(deltaTime) {
+    // Scale delta time by time scale (for slow-motion effects)
+    const scaledDeltaTime = deltaTime * this.timeScale;
+    
+    // Performance measurement
+    const updateStart = performance.now();
+    
     // Update battle royale mode
-    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
-      this.updateBattleRoyale(deltaTime);
+    if (this.gameMode === 'battle-royale') {
+      this.updateBattleRoyale(scaledDeltaTime);
     }
     
     // Update team scores
@@ -270,14 +530,12 @@ export class Game {
     
     // Update player
     if (this.player && !this.player.isDead) {
-      this.player.update(deltaTime);
+      const playerUpdateStart = performance.now();
+      this.player.update(scaledDeltaTime);
       this.centerCamera();
       
       // Check if player is out of bounds
-      if (this.player.x < 0) this.player.x = 0;
-      if (this.player.y < 0) this.player.y = 0;
-      if (this.player.x > this.worldSize) this.player.x = this.worldSize;
-      if (this.player.y > this.worldSize) this.player.y = this.worldSize;
+      this.keepEntityInBounds(this.player);
       
       // Apply battle royale damage if outside safe zone
       if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
@@ -286,17 +544,26 @@ export class Game {
         const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
         
         if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
-          this.player.takeDamage(this.battleRoyaleState.damagePerSecond * deltaTime);
+          this.player.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
         }
       }
+      
+      // Check achievements
+      this.achievements.checkAchievements(this.player);
+      
+      this.stats.playerUpdateTime = performance.now() - playerUpdateStart;
     } else if (this.player && this.player.isDead) {
-      this.isGameOver = true;
+      this.handleGameOver();
     }
     
     // Update AI players
+    const aiUpdateStart = performance.now();
     this.ais.forEach(ai => {
       if (!ai.isDead) {
-        ai.update(deltaTime);
+        ai.update(scaledDeltaTime);
+        
+        // Keep AI in bounds
+        this.keepEntityInBounds(ai);
         
         // Apply battle royale damage if outside safe zone
         if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
@@ -305,7 +572,7 @@ export class Game {
           const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
           
           if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
-            ai.takeDamage(this.battleRoyaleState.damagePerSecond * deltaTime);
+            ai.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
           }
         }
       } else {
@@ -313,52 +580,128 @@ export class Game {
         this.removalQueues.ais.push(ai);
       }
     });
+    this.stats.aiTime = performance.now() - aiUpdateStart;
     
     // Update food
     this.foods.forEach(food => {
-      food.update(deltaTime);
+      food.update(scaledDeltaTime);
     });
     
     // Update viruses
     this.viruses.forEach(virus => {
-      virus.update(deltaTime);
+      virus.update(scaledDeltaTime);
     });
     
     // Update power-ups
     this.powerUps.forEach(powerUp => {
-      powerUp.update(deltaTime);
+      powerUp.update(scaledDeltaTime);
     });
     
     // Update particles
-    this.particles.update(deltaTime);
+    this.particles.update(scaledDeltaTime);
     
     // Only add new AIs in classic mode or if battle royale hasn't started yet
     if (this.gameMode === 'classic' || 
         (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active)) {
-      while (this.ais.length < this.aiCount) {
-        const ai = new AI(
-          `Bot ${Math.floor(Math.random() * 1000)}`,
-          this.getRandomColor(),
-          this
-        );
+      this.replenishAIs();
+    }
+    
+    // Replenish food in batches for better performance
+    this.replenishFood();
+    
+    // Replenish viruses
+    this.replenishViruses();
+    
+    // Replenish power-ups
+    this.replenishPowerUps();
+    
+    // Check for battle royale start
+    if (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active && this.gameTime > 30) {
+      this.startBattleRoyale();
+    }
+    
+    // Update visible entities for rendering optimization
+    this.updateVisibleEntities();
+    
+    // Update performance stats
+    this.stats.updateTime = performance.now() - updateStart;
+  }
+  
+  keepEntityInBounds(entity) {
+    if (!entity) return;
+    
+    // Keep entity position within world bounds
+    entity.x = Math.max(0, Math.min(this.worldSize, entity.x));
+    entity.y = Math.max(0, Math.min(this.worldSize, entity.y));
+    
+    // Also keep all cells within bounds
+    if (entity.cells) {
+      entity.cells.forEach(cell => {
+        cell.x = Math.max(cell.radius, Math.min(this.worldSize - cell.radius, cell.x));
+        cell.y = Math.max(cell.radius, Math.min(this.worldSize - cell.radius, cell.y));
+      });
+    }
+  }
+  
+  replenishAIs() {
+    const aiSpawnRate = this.balanceSettings.aiSpawnRate;
+    const targetAICount = Math.floor(this.aiCount * aiSpawnRate);
+    
+    while (this.ais.length < targetAICount) {
+      const ai = new AI(
+        `Bot ${Math.floor(Math.random() * 1000)}`,
+        this.getRandomColor(),
+        this
+      );
+      
+      // Apply balance settings
+      ai.baseSpeed = this.balanceSettings.aiBaseSpeed;
+      ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
+      
+      // Assign team in team mode
+      if (this.gameMode === 'teams') {
+        const teamNames = Object.keys(this.teams);
+        const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
+        this.teams[teamName].players.push(ai);
+        ai.team = teamName;
+        ai.color = this.getTeamColor(teamName);
+      }
+      
+      // Spawn AI away from player for fairness
+      if (this.player && !this.player.isDead) {
+        let validPosition = false;
+        let attempts = 0;
+        let x, y;
         
-        // Apply balance settings
-        ai.baseSpeed = this.balanceSettings.aiBaseSpeed;
-        ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
-        
-        // Assign team in team mode
-        if (this.gameMode === 'teams') {
-          const teamNames = Object.keys(this.teams);
-          const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
-          this.teams[teamName].players.push(ai);
-          ai.team = teamName;
-          ai.color = this.getTeamColor(teamName);
+        while (!validPosition && attempts < 10) {
+          x = Math.random() * this.worldSize;
+          y = Math.random() * this.worldSize;
+          
+          const dx = x - this.player.x;
+          const dy = y - this.player.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          // Ensure AI spawns at least 1000 units away from player
+          if (distance > 1000) {
+            validPosition = true;
+          }
+          
+          attempts++;
         }
         
-        this.ais.push(ai);
+        if (validPosition) {
+          ai.x = x;
+          ai.y = y;
+          ai.cells[0].x = x;
+          ai.cells[0].y = y;
+        }
       }
+      
+      this.ais.push(ai);
     }
-    // Replenish food in batches for better performance
+  }
+  
+  replenishFood() {
     const now = Date.now();
     if (now - this.lastFoodGenerationTime > this.foodGenerationInterval) {
       this.lastFoodGenerationTime = now;
@@ -374,32 +717,53 @@ export class Game {
         ));
       }
     }
+  }
+  
+  replenishViruses() {
+    const maxViruses = this.balanceSettings.virusMaxCount;
+    const spawnRate = this.balanceSettings.virusSpawnRate;
+    const targetVirusCount = Math.floor(maxViruses * spawnRate);
     
-    // Replenish viruses
-    while (this.viruses.length < this.virusCount) {
-      this.viruses.push(new Virus(
-        Math.random() * this.worldSize,
-        Math.random() * this.worldSize,
-        this
-      ));
+    while (this.viruses.length < targetVirusCount) {
+      // Try to spawn viruses away from player
+      let x = Math.random() * this.worldSize;
+      let y = Math.random() * this.worldSize;
+      
+      if (this.player && !this.player.isDead) {
+        // Try a few times to find a position away from player
+        for (let i = 0; i < 5; i++) {
+          const testX = Math.random() * this.worldSize;
+          const testY = Math.random() * this.worldSize;
+          
+          const dx = testX - this.player.x;
+          const dy = testY - this.player.y;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+          
+          // If this position is farther from player, use it
+          if (distance > 500) {
+            x = testX;
+            y = testY;
+            break;
+          }
+        }
+      }
+      
+      this.viruses.push(new Virus(x, y, this));
     }
+  }
+  
+  replenishPowerUps() {
+    const maxPowerUps = this.balanceSettings.powerUpMaxCount;
+    const spawnRate = this.balanceSettings.powerUpSpawnRate;
+    const targetPowerUpCount = Math.floor(maxPowerUps * spawnRate);
     
-    // Replenish power-ups
-    while (this.powerUps.length < this.powerUpCount) {
+    while (this.powerUps.length < targetPowerUpCount) {
       this.powerUps.push(new PowerUp(
         Math.random() * this.worldSize,
         Math.random() * this.worldSize,
         this
       ));
     }
-    
-    // Check for battle royale start
-    if (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active && this.gameTime > 30) {
-      this.startBattleRoyale();
-    }
-    
-    // Update visible entities for rendering optimization
-    this.updateVisibleEntities();
   }
   
   processRemovalQueues() {
@@ -423,6 +787,18 @@ export class Game {
     
     // Remove AIs
     if (this.removalQueues.ais.length > 0) {
+      // Remove AIs from teams first
+      this.removalQueues.ais.forEach(ai => {
+        if (ai.team) {
+          const teamPlayers = this.teams[ai.team].players;
+          const index = teamPlayers.indexOf(ai);
+          if (index !== -1) {
+            teamPlayers.splice(index, 1);
+          }
+        }
+      });
+      
+      // Then remove from main AI list
       this.ais = this.ais.filter(ai => !this.removalQueues.ais.includes(ai));
       this.removalQueues.ais = [];
     }
@@ -544,8 +920,9 @@ export class Game {
                   const dy = entity.y - y;
                   const distance = Math.sqrt(dx * dx + dy * dy);
                   
-                  if (distance <= radius + entity.radius) {
+                  if (distance <= radius + (entity.radius || 0)) {
                     result[type].push(entity);
+                    this.stats.collisionsChecked++;
                   }
                 }
               });
@@ -603,35 +980,76 @@ export class Game {
   }
   
   updateBattleRoyale(deltaTime) {
-    const elapsed = this.gameTime - this.battleRoyaleState.shrinkStartTime;
-    const progress = Math.min(1, elapsed / this.battleRoyaleState.shrinkDuration);
+    if (!this.battleRoyaleState.active) return;
     
-    // Shrink safe zone
-    const startRadius = this.worldSize / 2;
-    const targetRadius = this.battleRoyaleState.minRadius;
-    this.battleRoyaleState.safeZoneRadius = startRadius - (startRadius - targetRadius) * progress;
+    const now = this.gameTime;
     
-    // Move safe zone center slightly for more dynamic gameplay
-    if (elapsed % 10 < deltaTime) { // Every ~10 seconds
-      const moveDistance = this.battleRoyaleState.safeZoneRadius * 0.1;
-      this.battleRoyaleState.safeZoneX += (Math.random() * 2 - 1) * moveDistance;
-      this.battleRoyaleState.safeZoneY += (Math.random() * 2 - 1) * moveDistance;
+    // Check if we need to show warning
+    if (!this.battleRoyaleState.isWarning && 
+        now >= this.battleRoyaleState.nextShrinkTime - this.battleRoyaleState.warningTime) {
+      this.battleRoyaleState.isWarning = true;
+      this.showAnnouncement("Warning: Safe zone will shrink soon!", 5000);
+      this.soundManager.playSound('battleRoyaleWarning');
+    }
+    
+    // Check if it's time to shrink
+    if (now >= this.battleRoyaleState.nextShrinkTime) {
+      // Start a new shrink phase
+      this.battleRoyaleState.shrinkStartTime = now;
+      this.battleRoyaleState.nextShrinkTime = now + this.battleRoyaleState.shrinkDuration + 30; // 30 seconds pause between shrinks
+      this.battleRoyaleState.isWarning = false;
+      
+      // Calculate new target radius
+      const currentRadius = this.battleRoyaleState.safeZoneRadius;
+      this.battleRoyaleState.previousRadius = currentRadius;
+      this.battleRoyaleState.targetRadius = Math.max(this.battleRoyaleState.minRadius, currentRadius * 0.7);
+      
+      // Move safe zone center slightly
+      const moveDistance = this.battleRoyaleState.safeZoneRadius * 0.2;
+      const moveAngle = Math.random() * Math.PI * 2;
+      const newX = this.battleRoyaleState.safeZoneX + Math.cos(moveAngle) * moveDistance;
+      const newY = this.battleRoyaleState.safeZoneY + Math.sin(moveAngle) * moveDistance;
       
       // Keep within world bounds
-      this.battleRoyaleState.safeZoneX = Math.max(this.battleRoyaleState.safeZoneRadius, 
-        Math.min(this.worldSize - this.battleRoyaleState.safeZoneRadius, this.battleRoyaleState.safeZoneX));
-      this.battleRoyaleState.safeZoneY = Math.max(this.battleRoyaleState.safeZoneRadius, 
-        Math.min(this.worldSize - this.battleRoyaleState.safeZoneRadius, this.battleRoyaleState.safeZoneY));
+      this.battleRoyaleState.safeZoneX = Math.max(this.battleRoyaleState.targetRadius, 
+        Math.min(this.worldSize - this.battleRoyaleState.targetRadius, newX));
+      this.battleRoyaleState.safeZoneY = Math.max(this.battleRoyaleState.targetRadius, 
+        Math.min(this.worldSize - this.battleRoyaleState.targetRadius, newY));
+      
+      this.showAnnouncement("Safe zone is shrinking!", 3000);
+      this.soundManager.playSound('battleRoyaleShrink');
+    }
+    
+    // Update shrinking
+    if (now >= this.battleRoyaleState.shrinkStartTime && 
+        now < this.battleRoyaleState.shrinkStartTime + this.battleRoyaleState.shrinkDuration) {
+      
+      const elapsed = now - this.battleRoyaleState.shrinkStartTime;
+      const progress = Math.min(1, elapsed / this.battleRoyaleState.shrinkDuration);
+      
+      // Shrink safe zone
+      const previousRadius = this.battleRoyaleState.previousRadius;
+      const targetRadius = this.battleRoyaleState.targetRadius;
+      this.battleRoyaleState.safeZoneRadius = previousRadius - (previousRadius - targetRadius) * progress;
+      
+      // Increase damage as zone shrinks
+      this.battleRoyaleState.damagePerSecond = 5 + (10 * progress);
     }
   }
   
   startBattleRoyale() {
     this.battleRoyaleState.active = true;
-    this.battleRoyaleState.shrinkStartTime = this.gameTime;
+    this.battleRoyaleState.shrinkStartTime = this.gameTime + 30; // Start shrinking after 30 seconds
+    this.battleRoyaleState.nextShrinkTime = this.gameTime + 30;
+    this.battleRoyaleState.previousRadius = this.worldSize / 2;
+    this.battleRoyaleState.safeZoneRadius = this.worldSize / 2;
+    this.battleRoyaleState.safeZoneX = this.worldSize / 2;
+    this.battleRoyaleState.safeZoneY = this.worldSize / 2;
+    
     this.soundManager.playSound('battleRoyaleStart');
     
     // Display announcement
-    this.showAnnouncement('Battle Royale has begun! Safe zone is shrinking!', 5000);
+    this.showAnnouncement('Battle Royale has begun! Safe zone will shrink soon!', 5000);
   }
   
   updateTeamScores() {
@@ -651,8 +1069,38 @@ export class Game {
         this.teams[ai.team].score += ai.score;
       }
     });
+    
+    // Check for team victory conditions
+    const teamScores = Object.entries(this.teams).map(([team, data]) => ({
+      team,
+      score: data.score
+    }));
+    
+    teamScores.sort((a, b) => b.score - a.score);
+    
+    // If top team has 2x the score of second team and above threshold, they win
+    if (teamScores.length >= 2 && 
+        teamScores[0].score > 10000 && 
+        teamScores[0].score > teamScores[1].score * 2) {
+      
+      // Team victory!
+      if (!this.teamVictoryAnnounced) {
+        this.teamVictoryAnnounced = true;
+        this.showAnnouncement(`Team ${teamScores[0].team.toUpperCase()} is dominating!`, 5000);
+        
+        // If player is on winning team, grant achievement
+        if (this.player && this.player.team === teamScores[0].team) {
+          this.achievements.unlock('team_victory');
+        }
+      }
+    } else {
+      this.teamVictoryAnnounced = false;
+    }
   }
+  
   render() {
+    const renderStart = performance.now();
+    
     // Clear canvas
     this.ctx.clearRect(0, 0, this.width, this.height);
     
@@ -778,496 +1226,13 @@ export class Game {
     
     // Draw UI elements
     this.drawUI();
-  }
-  
-  // Helper method to draw a single AI cell
-  drawAICell(ctx, ai, cell) {
-    // Save context for potential transformations
-    ctx.save();
     
-    // Draw cell with membrane
-    ai.drawCellWithMembrane(ctx, cell);
-    
-    // Draw AI name
-    if (cell.radius > 20) {
-      ctx.font = `${Math.min(16, cell.radius / 2)}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'white';
-      ctx.fillText(ai.name, cell.x, cell.y);
-      
-      // Draw score if cell is big enough
-      if (cell.radius > 40) {
-        ctx.font = `${Math.min(12, cell.radius / 3)}px Arial`;
-        ctx.fillText(Math.floor(ai.score), cell.x, cell.y + Math.min(16, cell.radius / 2) + 2);
-      }
+    // Draw debug info if enabled
+    if (this.debugMode) {
+      this.drawDebugInfo();
     }
     
-    // Draw team indicator if in team mode
-    if (this.gameMode === 'teams' && ai.team) {
-      ctx.beginPath();
-      ctx.arc(cell.x, cell.y, cell.radius + 5, 0, Math.PI * 2);
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = this.getTeamColor(ai.team);
-      ctx.stroke();
-    }
-    
-    // Restore context
-    ctx.restore();
-  }
-  
-  // Helper method to draw a single player cell
-  drawPlayerCell(ctx, player, cell) {
-    // Save context for potential transformations
-    ctx.save();
-    
-    // Apply invisibility
-    const opacity = player.powerUps.invisibility.active ? player.powerUps.invisibility.opacity : 1;
-    ctx.globalAlpha = opacity;
-    
-    // Draw cell with membrane
-    player.drawCellWithMembrane(ctx, cell, opacity);
-    
-    // Draw player name
-    if (cell.radius > 20) {
-      ctx.font = `${Math.min(16, cell.radius / 2)}px Arial`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'white';
-      ctx.fillText(player.name, cell.x, cell.y);
-      
-      // Draw level and score if cell is big enough
-      if (cell.radius > 40) {
-        ctx.font = `${Math.min(12, cell.radius / 3)}px Arial`;
-        ctx.fillText(`Lvl ${player.level} - ${Math.floor(player.score)}`, cell.x, cell.y + Math.min(16, cell.radius / 2) + 2);
-      }
-    }
-    
-    // Reset opacity
-    ctx.globalAlpha = 1;
-    
-    // Draw team indicator if in team mode
-    if (this.gameMode === 'teams' && player.team) {
-      ctx.beginPath();
-      ctx.arc(cell.x, cell.y, cell.radius + 5, 0, Math.PI * 2);
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = this.getTeamColor(player.team);
-      ctx.stroke();
-    }
-    
-    // Restore context
-    ctx.restore();
-  }
-  
-  drawBackground() {
-    // Create a pattern that moves slightly with the camera for parallax effect
-    const offsetX = (this.camera.x * 0.1) % this.gridSize;
-    const offsetY = (this.camera.y * 0.1) % this.gridSize;
-    
-    // Fill the visible area with the pattern
-    const pattern = this.ctx.createPattern(this.backgroundPattern, 'repeat');
-    this.ctx.save();
-    this.ctx.translate(offsetX, offsetY);
-    this.ctx.fillStyle = pattern;
-    
-    const viewportLeft = this.camera.x - this.width / (2 * this.camera.scale);
-    const viewportTop = this.camera.y - this.height / (2 * this.camera.scale);
-    const viewportWidth = this.width / this.camera.scale;
-    const viewportHeight = this.height / this.camera.scale;
-    
-    this.ctx.fillRect(
-      viewportLeft - offsetX, 
-      viewportTop - offsetY, 
-      viewportWidth, 
-      viewportHeight
-    );
-    this.ctx.restore();
-  }
-  
-  createBackgroundPattern() {
-    // Create an offscreen canvas for the pattern
-    const patternCanvas = document.createElement('canvas');
-    const patternCtx = patternCanvas.getContext('2d');
-    patternCanvas.width = this.gridSize * 2;
-    patternCanvas.height = this.gridSize * 2;
-    
-    // Fill with base color
-    patternCtx.fillStyle = '#f0f0f0';
-    patternCtx.fillRect(0, 0, patternCanvas.width, patternCanvas.height);
-    
-    // Add subtle gradient
-    const gradient = patternCtx.createRadialGradient(
-      patternCanvas.width / 2, patternCanvas.height / 2, 0,
-      patternCanvas.width / 2, patternCanvas.height / 2, patternCanvas.width / 2
-    );
-    gradient.addColorStop(0, 'rgba(255, 255, 255, 0.1)');
-    gradient.addColorStop(1, 'rgba(200, 200, 200, 0.1)');
-    
-    patternCtx.fillStyle = gradient;
-    patternCtx.fillRect(0, 0, patternCanvas.width, patternCanvas.height);
-    
-    // Add subtle dots
-    patternCtx.fillStyle = 'rgba(0, 0, 0, 0.03)';
-    for (let i = 0; i < 10; i++) {
-      const x = Math.random() * patternCanvas.width;
-      const y = Math.random() * patternCanvas.height;
-      const radius = Math.random() * 2 + 1;
-      
-      patternCtx.beginPath();
-      patternCtx.arc(x, y, radius, 0, Math.PI * 2);
-      patternCtx.fill();
-    }
-    
-    return patternCanvas;
-  }
-  
-  drawGrid() {
-    const startX = Math.floor((this.camera.x - this.width / (2 * this.camera.scale)) / this.gridSize) * this.gridSize;
-    const startY = Math.floor((this.camera.y - this.height / (2 * this.camera.scale)) / this.gridSize) * this.gridSize;
-    const endX = Math.ceil((this.camera.x + this.width / (2 * this.camera.scale)) / this.gridSize) * this.gridSize;
-    const endY = Math.ceil((this.camera.y + this.height / (2 * this.camera.scale)) / this.gridSize) * this.gridSize;
-    
-    this.ctx.strokeStyle = '#ddd';
-    this.ctx.lineWidth = 1;
-    
-    // Draw vertical lines
-    for (let x = startX; x <= endX; x += this.gridSize) {
-      if (x < 0 || x > this.worldSize) continue;
-      this.ctx.beginPath();
-      this.ctx.moveTo(x, Math.max(0, startY));
-      this.ctx.lineTo(x, Math.min(this.worldSize, endY));
-      this.ctx.stroke();
-    }
-    
-    // Draw horizontal lines
-    for (let y = startY; y <= endY; y += this.gridSize) {
-      if (y < 0 || y > this.worldSize) continue;
-      this.ctx.beginPath();
-      this.ctx.moveTo(Math.max(0, startX), y);
-      this.ctx.lineTo(Math.min(this.worldSize, endX), y);
-      this.ctx.stroke();
-    }
-  }
-  
-  drawWorldBorder() {
-    this.ctx.strokeStyle = '#ff0000';
-    this.ctx.lineWidth = 5;
-    this.ctx.strokeRect(0, 0, this.worldSize, this.worldSize);
-  }
-  drawSafeZone() {
-    // Draw safe zone border
-    this.ctx.beginPath();
-    this.ctx.arc(
-      this.battleRoyaleState.safeZoneX,
-      this.battleRoyaleState.safeZoneY,
-      this.battleRoyaleState.safeZoneRadius,
-      0, Math.PI * 2
-    );
-    this.ctx.strokeStyle = 'rgba(0, 200, 255, 0.8)';
-    this.ctx.lineWidth = 5;
-    this.ctx.stroke();
-    
-    // Draw danger zone overlay
-    this.ctx.save();
-    this.ctx.globalCompositeOperation = 'source-over';
-    
-    // Create a clip path for everything outside the safe zone
-    this.ctx.beginPath();
-    this.ctx.rect(0, 0, this.worldSize, this.worldSize);
-    this.ctx.arc(
-      this.battleRoyaleState.safeZoneX,
-      this.battleRoyaleState.safeZoneY,
-      this.battleRoyaleState.safeZoneRadius,
-      0, Math.PI * 2, true
-    );
-    this.ctx.clip();
-    
-    // Draw danger zone with animation
-    const dangerAlpha = 0.2 + Math.sin(this.gameTime * 2) * 0.05;
-    this.ctx.fillStyle = `rgba(255, 0, 0, ${dangerAlpha})`;
-    this.ctx.fillRect(0, 0, this.worldSize, this.worldSize);
-    
-    this.ctx.restore();
-  }
-  
-  drawUI() {
-    // Draw FPS counter
-    this.ctx.font = '14px Arial';
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    this.ctx.fillText(`FPS: ${this.stats.fps}`, 10, 20);
-    
-    // Draw entity count
-    this.ctx.fillText(`Entities: ${this.stats.entitiesRendered}`, 10, 40);
-    
-    // Draw minimap
-    this.miniMap.draw(this.ctx);
-    
-    // Draw team scores in team mode
-    if (this.gameMode === 'teams') {
-      this.drawTeamScores();
-    }
-    
-    // Draw battle royale info
-    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
-      this.drawBattleRoyaleInfo();
-    }
-  }
-  
-  drawTeamScores() {
-    const teamNames = Object.keys(this.teams);
-    const scoreHeight = 30;
-    const totalHeight = teamNames.length * scoreHeight;
-    const startY = 50;
-    
-    teamNames.forEach((team, index) => {
-      const y = startY + index * scoreHeight;
-      const score = Math.floor(this.teams[team].score);
-      
-      // Draw team color indicator
-      this.ctx.fillStyle = this.getTeamColor(team);
-      this.ctx.fillRect(10, y, 20, 20);
-      
-      // Draw team name and score
-      this.ctx.font = '16px Arial';
-      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      this.ctx.fillText(`${team.toUpperCase()}: ${score}`, 40, y + 15);
-    });
-  }
-  
-  drawBattleRoyaleInfo() {
-    const elapsed = this.gameTime - this.battleRoyaleState.shrinkStartTime;
-    const remaining = Math.max(0, this.battleRoyaleState.shrinkDuration - elapsed);
-    const minutes = Math.floor(remaining / 60);
-    const seconds = Math.floor(remaining % 60);
-    
-    // Draw time remaining
-    this.ctx.font = '16px Arial';
-    this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-    this.ctx.fillText(
-      `Safe Zone: ${minutes}:${seconds.toString().padStart(2, '0')}`,
-      10, 40
-    );
-    
-    // Draw players remaining
-    const playersRemaining = 1 + this.ais.length; // Player + AIs
-    this.ctx.fillText(`Players: ${playersRemaining}`, 10, 60);
-    
-    // Draw danger zone indicator
-    if (this.player && !this.player.isDead) {
-      const dx = this.player.x - this.battleRoyaleState.safeZoneX;
-      const dy = this.player.y - this.battleRoyaleState.safeZoneY;
-      const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
-        // Player is outside safe zone - show warning
-        this.ctx.fillStyle = 'rgba(255, 0, 0, 0.7)';
-        this.ctx.fillText('WARNING: Outside Safe Zone!', 10, 80);
-        
-        // Draw direction arrow to safe zone
-        const arrowSize = 30;
-        const arrowX = this.width - arrowSize - 20;
-        const arrowY = 80;
-        
-        // Calculate angle to safe zone
-        const angle = Math.atan2(
-          this.battleRoyaleState.safeZoneY - this.player.y,
-          this.battleRoyaleState.safeZoneX - this.player.x
-        );
-        
-        this.ctx.save();
-        this.ctx.translate(arrowX, arrowY);
-        this.ctx.rotate(angle);
-        
-        // Draw arrow
-        this.ctx.beginPath();
-        this.ctx.moveTo(arrowSize / 2, 0);
-        this.ctx.lineTo(-arrowSize / 2, -arrowSize / 3);
-        this.ctx.lineTo(-arrowSize / 2, arrowSize / 3);
-        this.ctx.closePath();
-        this.ctx.fillStyle = 'rgba(0, 200, 255, 0.8)';
-        this.ctx.fill();
-        
-        this.ctx.restore();
-      }
-    }
-  }
-  
-  showAnnouncement(message, duration = 3000) {
-    // Create announcement element if it doesn't exist
-    let announcement = document.getElementById('game-announcement');
-    if (!announcement) {
-      announcement = document.createElement('div');
-      announcement.id = 'game-announcement';
-      announcement.style.position = 'absolute';
-      announcement.style.top = '20%';
-      announcement.style.left = '50%';
-      announcement.style.transform = 'translate(-50%, -50%)';
-      announcement.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-      announcement.style.color = 'white';
-      announcement.style.padding = '15px 30px';
-      announcement.style.borderRadius = '5px';
-      announcement.style.fontSize = '24px';
-      announcement.style.fontWeight = 'bold';
-      announcement.style.textAlign = 'center';
-      announcement.style.zIndex = '1000';
-      announcement.style.opacity = '0';
-      announcement.style.transition = 'opacity 0.5s';
-      document.body.appendChild(announcement);
-    }
-    
-    // Set message and show announcement
-    announcement.textContent = message;
-    announcement.style.opacity = '1';
-    
-    // Hide after duration
-    setTimeout(() => {
-      announcement.style.opacity = '0';
-    }, duration);
-  }
-  
-  centerCamera() {
-    if (!this.player) return;
-    
-    // Calculate target camera position (player's position)
-    const targetX = this.player.x;
-    const targetY = this.player.y;
-    
-    // Apply smoothing to camera movement
-    this.camera.x += (targetX - this.camera.x) * this.cameraSmoothing;
-    this.camera.y += (targetY - this.camera.y) * this.cameraSmoothing;
-    
-    // Adjust scale based on player size
-    const targetScale = Math.max(0.4, Math.min(1, 40 / this.player.radius));
-    
-    // Smooth scale transition
-    this.camera.scale += (targetScale - this.camera.scale) * 0.05;
-    
-    // Add slight camera shake when player is damaged
-    if (this.player.effects && this.player.effects.some(effect => effect.type === 'damage')) {
-      const shakeAmount = 5 / this.camera.scale;
-      this.camera.x += (Math.random() * 2 - 1) * shakeAmount;
-      this.camera.y += (Math.random() * 2 - 1) * shakeAmount;
-    }
-  }
-  
-  updateViewport() {
-    this.width = this.canvas.width;
-    this.height = this.canvas.height;
-  }
-  
-  isInViewport(x, y, radius) {
-    const viewportLeft = this.camera.x - this.width / (2 * this.camera.scale);
-    const viewportRight = this.camera.x + this.width / (2 * this.camera.scale);
-    const viewportTop = this.camera.y - this.height / (2 * this.camera.scale);
-    const viewportBottom = this.camera.y + this.height / (2 * this.camera.scale);
-    
-    return (
-      x + radius > viewportLeft &&
-      x - radius < viewportRight &&
-      y + radius > viewportTop &&
-      y - radius < viewportBottom
-    );
-  }
-  
-  getLeaderboard() {
-    const entities = [];
-    
-    if (this.player && !this.player.isDead) {
-      entities.push({
-        id: 'player',
-        name: this.player.name,
-        score: this.player.score,
-        color: this.player.color,
-        team: this.player.team
-      });
-    }
-    
-    this.ais.forEach(ai => {
-      if (!ai.isDead) {
-        entities.push({
-          id: ai.id,
-          name: ai.name,
-          score: ai.score,
-          color: ai.color,
-          team: ai.team
-        });
-      }
-    });
-    
-    return entities
-      .sort((a, b) => b.score - a.score)
-      .slice(0, 10);
-  }
-  
-  getRandomColor() {
-    const colors = [
-      '#ff5252', '#4caf50', '#2196f3', '#ff9800', '#9c27b0',
-      '#e91e63', '#3f51b5', '#009688', '#ffeb3b', '#795548'
-    ];
-    return colors[Math.floor(Math.random() * colors.length)];
-  }
-  
-  // Helper method to calculate overlap percentage between two circles
-  calculateOverlap(x1, y1, r1, x2, y2, r2) {
-    const dx = x1 - x2;
-    const dy = y1 - y2;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    // If circles don't overlap at all
-    if (distance >= r1 + r2) {
-      return 0;
-    }
-    
-    // Calculate overlap
-    const overlap = (r1 + r2 - distance) / 2;
-    
-    // Calculate overlap percentage relative to the smaller circle
-    return overlap / Math.min(r1, r2);
-  }
-  
-  // Helper method to check if one circle can eat another
-  canEat(x1, y1, r1, x2, y2, r2) {
-    // Size threshold for eating
-    const sizeRatio = r1 / r2;
-    
-    // Calculate overlap percentage
-    const overlapPercentage = this.calculateOverlap(x1, y1, r1, x2, y2, r2);
-    
-    // Can eat if significantly larger and overlap is sufficient
-    return sizeRatio > 1.1 && overlapPercentage > 0.9;
-  }
-  
-  // Helper method to create a visual effect at a position
-  createEffect(x, y, type, options = {}) {
-    switch (type) {
-      case 'explosion':
-        this.particles.createExplosion(x, y, options.color || '#ff5252', options.size || 30);
-        break;
-      case 'ripple':
-        this.particles.createRipple(x, y, options.color || 'rgba(255, 255, 255, 0.5)', options.size || 50);
-        break;
-      case 'text':
-        this.particles.createTextEffect(x, y, options.text || '', options.color || 'white');
-        break;
-    }
-  }
-  
-  // Apply game balance settings
-  applyBalanceSettings(settings) {
-    // Update balance settings
-    this.balanceSettings = { ...this.balanceSettings, ...settings };
-    
-    // Apply to player if exists
-    if (this.player) {
-      this.player.baseSpeed = this.balanceSettings.playerBaseSpeed;
-      this.player.splitVelocity = this.balanceSettings.playerSplitVelocity;
-      this.player.ejectSpeed = this.balanceSettings.playerEjectSpeed;
-    }
-    
-    // Apply to AIs
-    this.ais.forEach(ai => {
-      ai.baseSpeed = this.balanceSettings.aiBaseSpeed;
-      ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
-    });
+    this.stats.renderTime = performance.now() - renderStart;
   }
 }
+
