@@ -6,13 +6,13 @@ export function setupControls(game, player) {
   
   console.log("Setting up controls for player", player.name);
   
-  // Verificar se o canvas existe
+  // Verify if the canvas exists
   if (!game.canvas) {
     console.error("Game canvas is missing");
     return;
   }
   
-  // Mouse movement
+  // Mouse movement with validation
   game.canvas.addEventListener('mousemove', (e) => {
     if (game.isGameOver || game.isPaused) return;
     
@@ -27,13 +27,13 @@ export function setupControls(game, player) {
       return;
     }
     
-    // Verificar se a câmera está definida
+    // Verify if the camera is defined
     if (!game.camera || isNaN(game.camera.x) || isNaN(game.camera.y) || isNaN(game.camera.scale)) {
       console.error("Invalid camera:", game.camera);
       return;
     }
     
-    // Convert to world coordinates
+    // Convert to world coordinates with validation
     const worldX = game.camera.x + (mouseX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (mouseY - game.height / 2) / game.camera.scale;
     
@@ -53,12 +53,14 @@ export function setupControls(game, player) {
       mouseY: mouseY
     });
     
-    // Set player target directly
-    player.targetX = worldX;
-    player.targetY = worldY;
+    // Set player target directly with validation
+    if (!isNaN(worldX) && !isNaN(worldY)) {
+      player.targetX = worldX;
+      player.targetY = worldY;
+    }
   });
   
-  // Touch movement for mobile
+  // Touch movement for mobile with validation
   game.canvas.addEventListener('touchmove', (e) => {
     if (game.isGameOver || game.isPaused) return;
     e.preventDefault();
@@ -74,13 +76,13 @@ export function setupControls(game, player) {
       return;
     }
     
-    // Verificar se a câmera está definida
+    // Verify if the camera is defined
     if (!game.camera || isNaN(game.camera.x) || isNaN(game.camera.y) || isNaN(game.camera.scale)) {
       console.error("Invalid camera for touch:", game.camera);
       return;
     }
     
-    // Convert to world coordinates
+    // Convert to world coordinates with validation
     const worldX = game.camera.x + (touchX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (touchY - game.height / 2) / game.camera.scale;
     
@@ -97,50 +99,14 @@ export function setupControls(game, player) {
       touchY: touchY
     });
     
-    // Set player target directly
-    player.targetX = worldX;
-    player.targetY = worldY;
+    // Set player target directly with validation
+    if (!isNaN(worldX) && !isNaN(worldY)) {
+      player.targetX = worldX;
+      player.targetY = worldY;
+    }
   }, { passive: false });
   
-  // Touch movement for mobile
-  game.canvas.addEventListener('touchmove', (e) => {
-    if (game.isGameOver || game.isPaused) return;
-    e.preventDefault();
-    
-    // Get touch position relative to canvas
-    const rect = game.canvas.getBoundingClientRect();
-    const touchX = e.touches[0].clientX - rect.left;
-    const touchY = e.touches[0].clientY - rect.top;
-    
-    // Verify touch coordinates are valid
-    if (isNaN(touchX) || isNaN(touchY)) {
-      console.error("Invalid touch coordinates:", touchX, touchY);
-      return;
-    }
-    
-    // Convert to world coordinates
-    const worldX = game.camera.x + (touchX - game.width / 2) / game.camera.scale;
-    const worldY = game.camera.y + (touchY - game.height / 2) / game.camera.scale;
-    
-    // Verify world coordinates are valid
-    if (isNaN(worldX) || isNaN(worldY)) {
-      console.error("Invalid world coordinates from touch:", worldX, worldY);
-      return;
-    }
-    
-    // Update player input
-    player.updateInput({
-      touchActive: true,
-      touchX: touchX,
-      touchY: touchY
-    });
-    
-    // Set player target directly
-    player.targetX = worldX;
-    player.targetY = worldY;
-  }, { passive: false });
-  
-  // Touch start
+  // Touch start with validation
   game.canvas.addEventListener('touchstart', (e) => {
     if (game.isGameOver || game.isPaused) return;
     
@@ -155,7 +121,13 @@ export function setupControls(game, player) {
       return;
     }
     
-    // Convert to world coordinates
+    // Verify if the camera is defined
+    if (!game.camera || isNaN(game.camera.x) || isNaN(game.camera.y) || isNaN(game.camera.scale)) {
+      console.error("Invalid camera for touch start:", game.camera);
+      return;
+    }
+    
+    // Convert to world coordinates with validation
     const worldX = game.camera.x + (touchX - game.width / 2) / game.camera.scale;
     const worldY = game.camera.y + (touchY - game.height / 2) / game.camera.scale;
     
@@ -172,9 +144,11 @@ export function setupControls(game, player) {
       touchY: touchY
     });
     
-    // Set player target directly
-    player.targetX = worldX;
-    player.targetY = worldY;
+    // Set player target directly with validation
+    if (!isNaN(worldX) && !isNaN(worldY)) {
+      player.targetX = worldX;
+      player.targetY = worldY;
+    }
   }, { passive: false });
   
   // Touch end
@@ -491,12 +465,16 @@ function updateMovementFromKeys(player, keyState) {
       return;
     }
     
-    player.targetX = player.x + dirX * moveDistance;
-    player.targetY = player.y + dirY * moveDistance;
+    // Calculate and validate new target position
+    const newTargetX = player.x + dirX * moveDistance;
+    const newTargetY = player.y + dirY * moveDistance;
     
-    // Verify target is valid
-    if (isNaN(player.targetX) || isNaN(player.targetY)) {
-      console.error("Invalid target position from key movement:", player.targetX, player.targetY);
+    if (!isNaN(newTargetX) && !isNaN(newTargetY)) {
+      player.targetX = newTargetX;
+      player.targetY = newTargetY;
+    } else {
+      console.error("Invalid target position from key movement:", newTargetX, newTargetY);
+      // Keep current target if new one is invalid
       player.targetX = player.x;
       player.targetY = player.y;
     }

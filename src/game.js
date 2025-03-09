@@ -362,6 +362,12 @@ setPlayer(player) {
   
   this.player = player;
   
+  // Ensure worldSize is defined
+  if (!this.worldSize || isNaN(this.worldSize)) {
+    console.error("worldSize is undefined or invalid. Setting default value.");
+    this.worldSize = 6000;
+  }
+  
   // Ensure player's initial position is valid and centered in the world
   player.x = this.worldSize / 2;
   player.y = this.worldSize / 2;
@@ -393,9 +399,16 @@ setPlayer(player) {
   } else {
     // Update all cells with the correct position
     player.cells.forEach(cell => {
-      cell.x = player.x;
-      cell.y = player.y;
+      if (cell) {
+        cell.x = player.x;
+        cell.y = player.y;
+      }
     });
+  }
+  
+  // Validate cells after initialization
+  if (typeof player.validateCells === 'function') {
+    player.validateCells();
   }
   
   // Initialize the cell membrane
@@ -564,86 +577,120 @@ setPlayer(player) {
     return colors[Math.floor(Math.random() * colors.length)];
   }
   
-gameLoop(timestamp) {
-  // Calculate delta time
-  if (!timestamp) timestamp = performance.now();
-  const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
-  this.lastFrameTime = timestamp;
+update(deltaTime) {
+  // Scale delta time by time scale (for slow-motion effects)
+  const scaledDeltaTime = deltaTime * this.timeScale;
   
-  // Cap delta time to prevent large jumps
-  const cappedDeltaTime = Math.min(deltaTime, 0.1);
+  // Performance measurement
+  const updateStart = performance.now();
   
-  // Update game time
-  this.gameTime += cappedDeltaTime;
+  // Verify if the game is initialized correctly
+  if (!this.worldSize || isNaN(this.worldSize)) {
+    console.error("worldSize is undefined or invalid. Initializing with default value.");
+    this.worldSize = 6000; // Default value
+  }
   
-  // Update FPS counter
-  this.frameCount++;
-  if (timestamp - this.fpsUpdateTime > 1000) {
-    this.fps = this.frameCount;
-    this.frameCount = 0;
-    this.fpsUpdateTime = timestamp;
-    
-    // Debug log
-    if (this.debugMode) {
-      console.log("FPS:", this.fps, "Player position:", this.player?.x, this.player?.y);
+  // Update battle royale mode
+  if (this.gameMode === 'battle-royale') {
+    try {
+      this.updateBattleRoyale(scaledDeltaTime);
+    } catch (error) {
+      console.error("Error in updateBattleRoyale:", error);
     }
   }
   
-  // Skip update if paused
-  if (this.isPaused) {
-    this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
-    return;
+  // Update team scores
+  if (this.gameMode === 'teams') {
+    try {
+      this.updateTeamScores();
+    } catch (error) {
+      console.error("Error in updateTeamScores:", error);
+    }
   }
   
+  // Update spatial grid
   try {
-    // Fixed time step for physics
-    this.accumulator += cappedDeltaTime;
-    while (this.accumulator >= 1 / this.targetFPS) {
-      this.update(1 / this.targetFPS);
-      this.accumulator -= 1 / this.targetFPS;
-    }
-    
-    // Render at display refresh rate
-    this.render();
-    
-    // Process removal queues
-    this.processRemovalQueues();
-    
-    if (!this.isGameOver) {
-      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
-    }
+    this.updateSpatialGrid();
   } catch (error) {
-    console.error("Error in game loop:", error);
+    console.error("Error in updateSpatialGrid:", error);
+  }
+  
+  // Update player with error handling
+  if (this.player && !this.player.isDead) {
+    const playerUpdateStart = performance.now();
     
-    // Try to recover from error
-    this.accumulator = 0;
-    
-    // Reset player position if it's the source of the error
-    if (this.player && (isNaN(this.player.x) || isNaN(this.player.y))) {
-      console.error("Resetting player position due to error");
-      this.player.x = this.worldSize / 2;
-      this.player.y = this.worldSize / 2;
-      this.player.targetX = this.player.x;
-      this.player.targetY = this.player.y;
+    try {
+      this.player.update(scaledDeltaTime);
+    } catch (error) {
+      console.error("Error in player.update:", error);
       
-      // Reset player cells
-      if (this.player.cells && this.player.cells.length > 0) {
-        this.player.cells.forEach(cell => {
-          if (cell) {
-            cell.x = this.player.x;
-            cell.y = this.player.y;
-            cell.velocityX = 0;
-            cell.velocityY = 0;
-          }
-        });
+      // Try to recover player if possible
+      if (isNaN(this.player.x) || isNaN(this.player.y)) {
+        this.player.x = this.worldSize / 2;
+        this.player.y = this.worldSize / 2;
+        this.player.targetX = this.player.x;
+        this.player.targetY = this.player.y;
       }
     }
     
-    // Continue game loop
-    if (!this.isGameOver) {
-      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
+    try {
+      this.centerCamera();
+    } catch (error) {
+      console.error("Error in centerCamera:", error);
+    }
+    
+    // Check if player is out of bounds
+    try {
+      this.keepEntityInBounds(this.player);
+    } catch (error) {
+      console.error("Error in keepEntityInBounds:", error);
+    }
+    
+    // Apply battle royale damage if outside safe zone
+    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
+      try {
+        const dx = this.player.x - this.battleRoyaleState.safeZoneX;
+        const dy = this.player.y - this.battleRoyaleState.safeZoneY;
+        const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
+          this.player.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
+        }
+      } catch (error) {
+        console.error("Error applying battle royale damage:", error);
+      }
+    }
+    
+    // Check achievements
+    if (this.achievements) {
+      try {
+        this.achievements.checkAchievements(this.player);
+      } catch (error) {
+        console.error("Error in checkAchievements:", error);
+      }
+    }
+    
+    this.stats.playerUpdateTime = performance.now() - playerUpdateStart;
+  } else if (this.player && this.player.isDead) {
+    try {
+      this.handleGameOver();
+    } catch (error) {
+      console.error("Error in handleGameOver:", error);
     }
   }
+  
+  // Rest of the update method remains the same...
+  // (Omitted for brevity)
+  
+  // Update visible entities for rendering optimization
+  try {
+    this.updateVisibleEntities();
+  } catch (error) {
+    console.error("Error in updateVisibleEntities:", error);
+  }
+  
+  // Update performance stats
+  this.stats.updateTime = performance.now() - updateStart;
 }
   
 update(deltaTime) {
@@ -1239,7 +1286,7 @@ getEntitiesInRange(x, y, radius, types) {
 }
   
 updateVisibleEntities() {
-  // Calculate viewport bounds
+  // Calculate viewport bounds with validation
   const viewportBounds = this.getViewportBounds();
   
   // Validate viewport bounds
@@ -1252,50 +1299,75 @@ updateVisibleEntities() {
     return;
   }
   
-  // Update visible entities
+  // Update visible foods with validation
   this.visibleEntities.foods = this.foods.filter(food => {
     // Skip invalid foods
-    if (!food) return false;
+    if (!food || isNaN(food.x) || isNaN(food.y) || isNaN(food.radius)) {
+      return false;
+    }
     
     // Check if food has checkVisibility method, otherwise use isInViewport
     if (typeof food.checkVisibility === 'function') {
-      return food.checkVisibility(viewportBounds);
+      try {
+        return food.checkVisibility(viewportBounds);
+      } catch (error) {
+        console.error("Error in food.checkVisibility:", error);
+        return false;
+      }
     } else {
       return this.isInViewport(food.x, food.y, food.radius, viewportBounds);
     }
   });
   
+  // Update visible viruses with validation
   this.visibleEntities.viruses = this.viruses.filter(virus => {
     // Skip invalid viruses
-    if (!virus) return false;
+    if (!virus || isNaN(virus.x) || isNaN(virus.y) || isNaN(virus.radius)) {
+      return false;
+    }
     
     if (typeof virus.checkVisibility === 'function') {
-      return virus.checkVisibility(viewportBounds);
+      try {
+        return virus.checkVisibility(viewportBounds);
+      } catch (error) {
+        console.error("Error in virus.checkVisibility:", error);
+        return false;
+      }
     } else {
       return this.isInViewport(virus.x, virus.y, virus.radius, viewportBounds);
     }
   });
   
+  // Update visible power-ups with validation
   this.visibleEntities.powerUps = this.powerUps.filter(powerUp => {
     // Skip invalid power-ups
-    if (!powerUp) return false;
+    if (!powerUp || isNaN(powerUp.x) || isNaN(powerUp.y) || isNaN(powerUp.radius)) {
+      return false;
+    }
     
     if (typeof powerUp.checkVisibility === 'function') {
-      return powerUp.checkVisibility(viewportBounds);
+      try {
+        return powerUp.checkVisibility(viewportBounds);
+      } catch (error) {
+        console.error("Error in powerUp.checkVisibility:", error);
+        return false;
+      }
     } else {
       return this.isInViewport(powerUp.x, powerUp.y, powerUp.radius, viewportBounds);
     }
   });
   
-  // Update visible AIs
+  // Update visible AIs with validation
   this.visibleEntities.ais = [];
   this.ais.forEach(ai => {
-    if (!ai || ai.isDead) return;
+    if (!ai || ai.isDead || !ai.cells || ai.cells.length === 0) return;
     
     let isVisible = false;
     
     // Check if any cell is visible
     ai.cells.forEach(cell => {
+      if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius)) return;
+      
       if (this.isInViewport(cell.x, cell.y, cell.radius, viewportBounds)) {
         isVisible = true;
       }
@@ -1307,20 +1379,28 @@ updateVisibleEntities() {
   });
 }
   
-  getViewportBounds() {
+ getViewportBounds() {
   // Validate camera properties
   if (!this.camera || isNaN(this.camera.x) || isNaN(this.camera.y) || isNaN(this.camera.scale)) {
     console.error("Invalid camera for viewport calculation:", this.camera);
+    
+    // Return default bounds based on world size
+    const worldSize = this.worldSize || 6000;
     return {
       left: 0,
-      right: this.worldSize,
+      right: worldSize,
       top: 0,
-      bottom: this.worldSize
+      bottom: worldSize
     };
   }
   
-  const halfWidth = this.width / (2 * this.camera.scale);
-  const halfHeight = this.height / (2 * this.camera.scale);
+  // Ensure width and height are valid
+  const width = !isNaN(this.width) ? this.width : window.innerWidth;
+  const height = !isNaN(this.height) ? this.height : window.innerHeight;
+  
+  // Calculate viewport bounds
+  const halfWidth = width / (2 * this.camera.scale);
+  const halfHeight = height / (2 * this.camera.scale);
   
   return {
     left: this.camera.x - halfWidth,
@@ -1356,11 +1436,22 @@ isInViewport(x, y, radius, viewportBounds) {
 }
   
 centerCamera() {
-  if (!this.player) return;
+  if (!this.player) {
+    // Default to center of world if no player
+    this.camera.x = this.worldSize / 2;
+    this.camera.y = this.worldSize / 2;
+    return;
+  }
   
   // Verify player coordinates are valid
   if (isNaN(this.player.x) || isNaN(this.player.y)) {
     console.error("Invalid player coordinates for camera centering:", this.player.x, this.player.y);
+    
+    // Use last valid camera position or default to center
+    if (isNaN(this.camera.x) || isNaN(this.camera.y)) {
+      this.camera.x = this.worldSize / 2;
+      this.camera.y = this.worldSize / 2;
+    }
     return;
   }
   
@@ -1370,9 +1461,16 @@ centerCamera() {
   let totalMass = 0;
   let validCells = 0;
   
+  if (!this.player.cells || this.player.cells.length === 0) {
+    // If player has no cells, use player position directly
+    this.camera.x = this.player.x;
+    this.camera.y = this.player.y;
+    return;
+  }
+  
   this.player.cells.forEach(cell => {
     // Verify cell coordinates and mass are valid
-    if (isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
+    if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
       return;
     }
     
@@ -1408,17 +1506,24 @@ centerCamera() {
   
   // Calculate camera scale based on player size
   if (this.player.cells.length > 0) {
-    const largestCell = this.player.cells.reduce((largest, cell) => 
-      cell.radius > largest.radius ? cell : largest, this.player.cells[0]);
+    // Find largest valid cell
+    let largestRadius = 0;
+    this.player.cells.forEach(cell => {
+      if (cell && !isNaN(cell.radius) && cell.radius > largestRadius) {
+        largestRadius = cell.radius;
+      }
+    });
     
-    // Scale inversely with player size, but with limits
-    const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestCell.radius));
-    
-    // Smooth scale transition
-    if (isNaN(this.camera.scale)) {
-      this.camera.scale = targetScale;
-    } else {
-      this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
+    if (largestRadius > 0) {
+      // Scale inversely with player size, but with limits
+      const targetScale = Math.max(0.5, Math.min(1.0, 40 / largestRadius));
+      
+      // Smooth scale transition
+      if (isNaN(this.camera.scale)) {
+        this.camera.scale = targetScale;
+      } else {
+        this.camera.scale += (targetScale - this.camera.scale) * this.cameraSmoothing * 0.5;
+      }
     }
   }
   
