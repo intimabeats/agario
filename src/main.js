@@ -243,12 +243,11 @@ function initGame() {
     return;
   }
   
-  // Verify if worldSize is defined
-  if (!game.worldSize) {
-    console.error('worldSize is undefined. Setting default value.');
-    game.worldSize = 6000; // Default value
-  }
+  // Initialize spatial grid
+  game.spatialGrid = {};
+  game.gridCellSize = 200; // Size of each grid cell
   
+  // Set game mode
   game.gameMode = selectedGameMode;
   
   // Create achievements

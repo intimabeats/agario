@@ -238,84 +238,86 @@ export class AI {
   }
   
   update(deltaTime) {
-    // Skip frames for performance if needed
-    if (this.skipFrames > 0) {
-      this.skipFrames--;
-      return;
-    }
-    
-    // Performance throttling - update AI at lower frequency than game
-    const now = Date.now();
-    if (now - this.lastUpdateTime < this.updateInterval) {
-      return;
-    }
-    this.lastUpdateTime = now;
-    
-    // Make decisions
-    this.makeDecisions(deltaTime);
-    
-    // Update speed based on size
-    this.updateSpeedBasedOnSize();
-    
-    // Move towards target with inertia
-    this.moveWithInertia(deltaTime);
-    
-    // Check collisions
-    this.checkCollisions();
-    
-    // Update cells
-    this.updateCells(deltaTime);
-    
-    // Update cell membranes
-    this.updateCellMembranes(deltaTime);
-    
-    // Update power-ups
-    this.updatePowerUps(deltaTime);
-    
-    // Update score
-    this.updateScore();
-    
-    // Update eject cooldown
-    if (this.ejectCooldown > 0) {
-      this.ejectCooldown -= deltaTime * 1000;
-    }
-    
-    // Update split cooldown
-    if (this.splitCooldown > 0) {
-      this.splitCooldown -= deltaTime * 1000;
-    }
-    
-    // Update stuck detection
-    this.updateStuckDetection();
-    
-    // Update effects
-    this.updateEffects(deltaTime);
-    
-    // Regenerate health
-    this.regenerateHealth(deltaTime);
-    
-    // Update damage immunity
-    if (this.damageImmunity && Date.now() > this.damageImmunityTime) {
-      this.damageImmunity = false;
-    }
-    
-    // Create trail effect if moving fast
-    if (this.powerUps.speedBoost.active && this.game.particles) {
-      this.cells.forEach(cell => {
-        this.game.particles.createTrailEffect(cell, {
-          color: this.color,
-          size: cell.radius * 0.2,
-          interval: 0.05,
-          life: 0.3,
-          fadeOut: true,
-          shrink: 2
-        });
-      });
-    }
-    
-    // Update stats
-    this.updateStats(deltaTime);
+  // Skip frames for performance if needed
+  if (this.skipFrames > 0) {
+    this.skipFrames--;
+    return;
   }
+  
+  // Performance throttling - update AI at lower frequency than game
+  const now = Date.now();
+  if (now - this.lastUpdateTime < this.updateInterval) {
+    return;
+  }
+  this.lastUpdateTime = now;
+  
+  // Make decisions
+  this.makeDecisions(deltaTime);
+  
+  // Update speed based on size
+  this.updateSpeedBasedOnSize();
+  
+  // Move towards target with inertia
+  this.moveWithInertia(deltaTime);
+  
+  // Check collisions
+  if (this.game && typeof this.game.getEntitiesInRange === 'function') {
+    this.checkCollisions();
+  }
+  
+  // Update cells
+  this.updateCells(deltaTime);
+  
+  // Update cell membranes
+  this.updateCellMembranes(deltaTime);
+  
+  // Update power-ups
+  this.updatePowerUps(deltaTime);
+  
+  // Update score
+  this.updateScore();
+  
+  // Update eject cooldown
+  if (this.ejectCooldown > 0) {
+    this.ejectCooldown -= deltaTime * 1000;
+  }
+  
+  // Update split cooldown
+  if (this.splitCooldown > 0) {
+    this.splitCooldown -= deltaTime * 1000;
+  }
+  
+  // Update stuck detection
+  this.updateStuckDetection();
+  
+  // Update effects
+  this.updateEffects(deltaTime);
+  
+  // Regenerate health
+  this.regenerateHealth(deltaTime);
+  
+  // Update damage immunity
+  if (this.damageImmunity && Date.now() > this.damageImmunityTime) {
+    this.damageImmunity = false;
+  }
+  
+  // Create trail effect if moving fast
+  if (this.powerUps.speedBoost.active && this.game.particles) {
+    this.cells.forEach(cell => {
+      this.game.particles.createTrailEffect(cell, {
+        color: this.color,
+        size: cell.radius * 0.2,
+        interval: 0.05,
+        life: 0.3,
+        fadeOut: true,
+        shrink: 2
+      });
+    });
+  }
+  
+  // Update stats
+  this.updateStats(deltaTime);
+}
   
   updateCellMembranes(deltaTime) {
     const time = Date.now() / 1000;

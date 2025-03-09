@@ -12,209 +12,187 @@ import { Leaderboard } from './leaderboard.js';
 
 export class Game {
   constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.width = canvas.width;
-    this.height = canvas.height;
+  this.canvas = canvas;
+  this.ctx = canvas.getContext('2d');
+  this.width = canvas.width;
+  this.height = canvas.height;
+  
+  // Game properties
+  this.player = null;
+  this.foods = [];
+  this.ais = [];
+  this.viruses = [];
+  this.powerUps = [];
+  this.isGameOver = false;
+  this.isPaused = false;
+  this.gameTime = 0;
+  this.lastUpdateTime = Date.now();
+  this.frameCount = 0;
+  this.fps = 0;
+  this.fpsUpdateTime = 0;
+  this.targetFPS = 60;
+  this.frameInterval = 1000 / this.targetFPS;
+  this.accumulator = 0;
+  
+  // World properties
+  this.worldSize = 6000;
+  this.gridSize = 50;
+  this.camera = { x: 0, y: 0, scale: 1 };
+  this.cameraSmoothing = 0.1; // Camera smoothing factor
+  this.cameraBounds = {
+    minX: 0,
+    minY: 0,
+    maxX: this.worldSize,
+    maxY: this.worldSize
+  };
+  
+  // Game settings
+  this.foodCount = 1000;
+  this.aiCount = 20;
+  this.virusCount = 25;
+  this.powerUpCount = 12;
+  this.maxCellsPerPlayer = 16;
+  this.maxMass = 10000; // Maximum mass a cell can have
+  
+  // Physics settings
+  this.cellCollisionElasticity = 0.7;
+  this.cellRepulsionForce = 0.05;
+  this.foodAttractionRadius = 5;
+  this.timeScale = 1.0; // For slow-motion effects
+  
+  // Visual effects
+  this.particles = new ParticleSystem(this);
+  this.backgroundPattern = this.createBackgroundPattern();
+  this.miniMap = new MiniMap(this);
+  
+  // Sound effects
+  this.soundManager = new SoundManager();
+  
+  // Game stats
+  this.stats = {
+    fps: 0,
+    frameCount: 0,
+    lastFpsUpdate: 0,
+    entitiesRendered: 0,
+    collisionsChecked: 0,
+    updateTime: 0,
+    renderTime: 0,
+    physicsTime: 0,
+    aiTime: 0
+  };
+  
+  // Animation frame
+  this.animationId = null;
+  this.lastFrameTime = 0;
+  
+  // Game modes
+  this.gameMode = 'classic'; // classic, battle-royale, teams
+  this.battleRoyaleState = {
+    active: false,
+    safeZoneRadius: this.worldSize / 2,
+    safeZoneX: this.worldSize / 2,
+    safeZoneY: this.worldSize / 2,
+    shrinkStartTime: 0,
+    shrinkDuration: 60000, // 1 minute
+    minRadius: 500,
+    damagePerSecond: 5,
+    warningTime: 10000, // 10 seconds warning before shrink
+    isWarning: false,
+    nextShrinkTime: 0
+  };
+  
+  // Teams
+  this.teams = {
+    red: { score: 0, players: [], color: '#ff5252' },
+    blue: { score: 0, players: [], color: '#2196f3' },
+    green: { score: 0, players: [], color: '#4caf50' }
+  };
+  
+  // Spatial partitioning for collision detection optimization
+  this.gridCellSize = 200; // Size of each grid cell
+  this.spatialGrid = {}; // Will store entities by grid cell
+  
+  // Performance optimization
+  this.lastFoodGenerationTime = 0;
+  this.foodGenerationInterval = 100; // Generate food in batches every 100ms
+  this.visibleEntities = {
+    foods: [],
+    ais: [],
+    viruses: [],
+    powerUps: []
+  };
+  
+  // Entity removal queues to avoid modification during iteration
+  this.removalQueues = {
+    foods: [],
+    viruses: [],
+    powerUps: [],
+    ais: []
+  };
+  
+  // Game balance settings
+  this.balanceSettings = {
+    // AI settings
+    aiBaseSpeed: 4.5,
+    aiAggressionMultiplier: 1.2,
+    aiSpawnRate: 1.0,
     
-    // Game properties
-    this.player = null;
-    this.foods = [];
-    this.ais = [];
-    this.viruses = [];
-    this.powerUps = [];
-    this.isGameOver = false;
-    this.isPaused = false;
-    this.gameTime = 0;
-    this.lastUpdateTime = Date.now();
-    this.frameCount = 0;
-    this.fps = 0;
-    this.fpsUpdateTime = 0;
-    this.targetFPS = 60;
-    this.frameInterval = 1000 / this.targetFPS;
-    this.accumulator = 0;
+    // Player settings
+    playerBaseSpeed: 6.5,
+    playerSplitVelocity: 18,
+    playerEjectSpeed: 35,
+    playerGrowthRate: 1.5,
+    playerShrinkRate: 0.005,
     
-    // World properties
-    this.worldSize = 6000;
-    this.gridSize = 50;
-    this.camera = { x: 0, y: 0, scale: 1 };
-    this.cameraSmoothing = 0.1; // Camera smoothing factor
-    this.cameraBounds = {
-      minX: 0,
-      minY: 0,
-      maxX: this.worldSize,
-      maxY: this.worldSize
-    };
+    // Food settings
+    foodValue: 1.0,
+    foodSpawnRate: 1.0,
+    foodMaxSize: 12,
     
-    // Game settings
-    this.foodCount = 1000;
-    this.aiCount = 20;
-    this.virusCount = 25;
-    this.powerUpCount = 12;
-    this.maxCellsPerPlayer = 16;
-    this.maxMass = 10000; // Maximum mass a cell can have
+    // Virus settings
+    virusSpawnRate: 1.0,
+    virusSplitForce: 1.0,
+    virusMaxCount: 25,
+    
+    // Power-up settings
+    powerUpSpawnRate: 1.0,
+    powerUpDuration: 1.0,
+    powerUpMaxCount: 12,
     
     // Physics settings
-    this.cellCollisionElasticity = 0.7;
-    this.cellRepulsionForce = 0.05;
-    this.foodAttractionRadius = 5;
-    this.timeScale = 1.0; // For slow-motion effects
+    frictionCoefficient: 0.02,
+    elasticityCoefficient: 0.7,
     
-    // Visual effects
-    this.particles = new ParticleSystem(this);
-    this.backgroundPattern = this.createBackgroundPattern();
-    this.miniMap = new MiniMap(this);
+    // Game difficulty
+    difficultyLevel: 2, // 1-5, affects AI behavior and spawn rates
     
-    // Sound effects
-    this.soundManager = new SoundManager();
-    
-    // Game stats
-    this.stats = {
-      fps: 0,
-      frameCount: 0,
-      lastFpsUpdate: 0,
-      entitiesRendered: 0,
-      collisionsChecked: 0,
-      updateTime: 0,
-      renderTime: 0,
-      physicsTime: 0,
-      aiTime: 0
-    };
-    
-    // Animation frame
-    this.animationId = null;
-    this.lastFrameTime = 0;
-    
-    // Game modes
-    this.gameMode = 'classic'; // classic, battle-royale, teams
-    this.battleRoyaleState = {
-      active: false,
-      safeZoneRadius: this.worldSize / 2,
-      safeZoneX: this.worldSize / 2,
-      safeZoneY: this.worldSize / 2,
-      shrinkStartTime: 0,
-      shrinkDuration: 60000, // 1 minute
-      minRadius: 500,
-      damagePerSecond: 5,
-      warningTime: 10000, // 10 seconds warning before shrink
-      isWarning: false,
-      nextShrinkTime: 0
-    };
-    
-    // Teams
-    this.teams = {
-      red: { score: 0, players: [], color: '#ff5252' },
-      blue: { score: 0, players: [], color: '#2196f3' },
-      green: { score: 0, players: [], color: '#4caf50' }
-    };
-    
-    // Spatial partitioning for collision detection optimization
-    this.gridCellSize = 200; // Size of each grid cell
-    this.spatialGrid = {}; // Will store entities by grid cell
-    
-    // Performance optimization
-    this.lastFoodGenerationTime = 0;
-    this.foodGenerationInterval = 100; // Generate food in batches every 100ms
-    this.visibleEntities = {
-      foods: [],
-      ais: [],
-      viruses: [],
-      powerUps: []
-    };
-    
-    // Entity removal queues to avoid modification during iteration
-    this.removalQueues = {
-      foods: [],
-      viruses: [],
-      powerUps: [],
-      ais: []
-    };
-    
-    // Game balance settings
-    this.balanceSettings = {
-      // AI settings
-      aiBaseSpeed: 4.5,
-      aiAggressionMultiplier: 1.2,
-      aiSpawnRate: 1.0,
-      
-      // Player settings
-      playerBaseSpeed: 6.5,
-      playerSplitVelocity: 18,
-      playerEjectSpeed: 35,
-      playerGrowthRate: 1.5,
-      playerShrinkRate: 0.005,
-      
-      // Food settings
-      foodValue: 1.0,
-      foodSpawnRate: 1.0,
-      foodMaxSize: 12,
-      
-      // Virus settings
-      virusSpawnRate: 1.0,
-      virusSplitForce: 1.0,
-      virusMaxCount: 25,
-      
-      // Power-up settings
-      powerUpSpawnRate: 1.0,
-      powerUpDuration: 1.0,
-      powerUpMaxCount: 12,
-      
-      // Physics settings
-      frictionCoefficient: 0.02,
-      elasticityCoefficient: 0.7,
-      
-      // Game difficulty
-      difficultyLevel: 2, // 1-5, affects AI behavior and spawn rates
-      
-      // Experience and leveling
-      expMultiplier: 1.0,
-      levelUpRequirement: 1000
-    };
-    
-    // Difficulty presets
-    this.difficultyPresets = {
-      easy: {
-        aiAggressionMultiplier: 0.8,
-        aiSpawnRate: 0.7,
-        playerGrowthRate: 1.8,
-        playerShrinkRate: 0.003,
-        expMultiplier: 1.2
-      },
-      normal: {
-        aiAggressionMultiplier: 1.2,
-        aiSpawnRate: 1.0,
-        playerGrowthRate: 1.5,
-        playerShrinkRate: 0.005,
-        expMultiplier: 1.0
-      },
-      hard: {
-        aiAggressionMultiplier: 1.5,
-        aiSpawnRate: 1.3,
-        playerGrowthRate: 1.2,
-        playerShrinkRate: 0.007,
-        expMultiplier: 0.8
-      }
-    };
-    
-    // Initialize additional systems
+    // Experience and leveling
+    expMultiplier: 1.0,
+    levelUpRequirement: 1000
+  };
+  
+  // Initialize additional systems
+  try {
     this.storage = new Storage();
     this.achievements = new Achievements(this);
     this.skins = new Skins();
     this.leaderboard = new Leaderboard();
-    
-    // Load saved settings
-    this.loadSettings();
-    
-    // Debug mode
-    this.debugMode = false;
-    
-    // Mobile detection
-    this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    
-    // Event listeners
-    this.setupEventListeners();
-		this.animationId = null;
+  } catch (error) {
+    console.error("Error initializing game systems:", error);
   }
+  
+  // Load saved settings
+  this.loadSettings();
+  
+  // Debug mode
+  this.debugMode = false;
+  
+  // Mobile detection
+  this.isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+  
+  // Event listeners
+  this.setupEventListeners();
+}
   
   createBackgroundPattern() {
     // Create an off-screen canvas for the pattern
@@ -450,43 +428,78 @@ setPlayer(player) {
   }
   
  start() {
-    this.generateWorld();
-    this.lastUpdateTime = Date.now();
-    this.lastFrameTime = performance.now();
-    this.gameLoop();
+  // Initialize spatial grid if not already done
+  if (!this.spatialGrid) {
+    this.spatialGrid = {};
+  }
+  
+  // Initialize grid cell size if not set
+  if (!this.gridCellSize) {
+    this.gridCellSize = 200;
+  }
+  
+  // Generate world entities
+  this.generateWorld();
+  
+  // Set up game time tracking
+  this.lastUpdateTime = Date.now();
+  this.lastFrameTime = performance.now();
+  
+  // Start game loop
+  this.gameLoop();
+  
+  // Play background music
+  if (this.soundManager) {
     this.soundManager.playBackgroundMusic();
-    
-    // Show tutorial for new players
-    if (this.storage.isFirstTime()) {
-      this.showTutorial();
-    }
-    
-    // Trigger game start event
-    const event = new CustomEvent('gameStart', { detail: { gameMode: this.gameMode } });
+  }
+  
+  // Show tutorial for new players
+  if (this.storage && this.storage.isFirstTime()) {
+    this.showTutorial();
+  }
+  
+  // Trigger game start event
+  const event = new CustomEvent('gameStart', { detail: { gameMode: this.gameMode } });
+  if (this.canvas) {
     this.canvas.dispatchEvent(event);
   }
+}
 	gameLoop() {
+  try {
     const currentTime = performance.now();
-    const deltaTime = (currentTime - this.lastFrameTime) / 1000;
+    const deltaTime = Math.min((currentTime - this.lastFrameTime) / 1000, 0.1); // Cap at 0.1 seconds
     this.lastFrameTime = currentTime;
-
-    // Update game state
-    this.update(deltaTime);
-
-    // Render game
-    this.render();
-
+    
+    // Skip update if game is paused
+    if (!this.isPaused) {
+      // Update game state
+      this.update(deltaTime);
+      
+      // Render game
+      this.render();
+    }
+    
     // Calculate FPS
     this.frameCount++;
     if (currentTime - this.fpsUpdateTime > 1000) {
       this.fps = Math.round((this.frameCount * 1000) / (currentTime - this.fpsUpdateTime));
       this.frameCount = 0;
       this.fpsUpdateTime = currentTime;
+      
+      // Update game time
+      this.gameTime += 1;
     }
-
+    
     // Schedule next frame
     this.animationId = requestAnimationFrame(() => this.gameLoop());
+  } catch (error) {
+    console.error("Error in game loop:", error);
+    
+    // Try to recover and continue
+    this.lastFrameTime = performance.now();
+    this.animationId = requestAnimationFrame(() => this.gameLoop());
   }
+}
   
   showTutorial() {
     // Implementation will be in tutorial.js
@@ -533,18 +546,36 @@ setPlayer(player) {
     this.leaderboard.submitScore(this.player.name, Math.floor(this.player.score));
   }
   
-  generateWorld() {
-    // Generate food
-    for (let i = 0; i < this.foodCount; i++) {
-      this.foods.push(new Food(
+ generateWorld() {
+  // Clear existing entities
+  this.foods = [];
+  this.ais = [];
+  this.viruses = [];
+  this.powerUps = [];
+  
+  // Ensure worldSize is defined
+  if (!this.worldSize || isNaN(this.worldSize)) {
+    console.error("worldSize is undefined or invalid in generateWorld. Setting default value.");
+    this.worldSize = 6000;
+  }
+  
+  // Generate food
+  for (let i = 0; i < this.foodCount; i++) {
+    try {
+      const food = new Food(
         Math.random() * this.worldSize,
         Math.random() * this.worldSize,
         this
-      ));
+      );
+      this.foods.push(food);
+    } catch (error) {
+      console.error("Error generating food:", error);
     }
-    
-    // Generate AI players
-    for (let i = 0; i < this.aiCount; i++) {
+  }
+  
+  // Generate AI players
+  for (let i = 0; i < this.aiCount; i++) {
+    try {
       const ai = new AI(
         `Bot ${i + 1}`,
         this.getRandomColor(),
@@ -552,39 +583,63 @@ setPlayer(player) {
       );
       
       // Apply balance settings
-      ai.baseSpeed = this.balanceSettings.aiBaseSpeed;
-      ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
+      if (this.balanceSettings) {
+        ai.baseSpeed = this.balanceSettings.aiBaseSpeed || ai.baseSpeed;
+        if (ai.personality && this.balanceSettings.aiAggressionMultiplier) {
+          ai.personality.aggression *= this.balanceSettings.aiAggressionMultiplier;
+        }
+      }
       
       // Assign team in team mode
-      if (this.gameMode === 'teams') {
+      if (this.gameMode === 'teams' && this.teams) {
         const teamNames = Object.keys(this.teams);
-        const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
-        this.teams[teamName].players.push(ai);
-        ai.team = teamName;
-        ai.color = this.getTeamColor(teamName);
+        if (teamNames.length > 0) {
+          const teamName = teamNames[Math.floor(Math.random() * teamNames.length)];
+          if (this.teams[teamName]) {
+            this.teams[teamName].players.push(ai);
+            ai.team = teamName;
+            ai.color = this.getTeamColor(teamName);
+          }
+        }
       }
       
       this.ais.push(ai);
-    }
-    
-    // Generate viruses
-    for (let i = 0; i < this.virusCount; i++) {
-      this.viruses.push(new Virus(
-        Math.random() * this.worldSize,
-        Math.random() * this.worldSize,
-        this
-      ));
-    }
-    
-    // Generate power-ups
-    for (let i = 0; i < this.powerUpCount; i++) {
-      this.powerUps.push(new PowerUp(
-        Math.random() * this.worldSize,
-        Math.random() * this.worldSize,
-        this
-      ));
+    } catch (error) {
+      console.error("Error generating AI:", error);
     }
   }
+  
+  // Generate viruses
+  for (let i = 0; i < this.virusCount; i++) {
+    try {
+      const virus = new Virus(
+        Math.random() * this.worldSize,
+        Math.random() * this.worldSize,
+        this
+      );
+      this.viruses.push(virus);
+    } catch (error) {
+      console.error("Error generating virus:", error);
+    }
+  }
+  
+  // Generate power-ups
+  for (let i = 0; i < this.powerUpCount; i++) {
+    try {
+      const powerUp = new PowerUp(
+        Math.random() * this.worldSize,
+        Math.random() * this.worldSize,
+        this
+      );
+      this.powerUps.push(powerUp);
+    } catch (error) {
+      console.error("Error generating power-up:", error);
+    }
+  }
+  
+  // Initialize spatial grid
+  this.updateSpatialGrid();
+}
   
   getRandomColor() {
     const colors = [
@@ -702,95 +757,29 @@ update(deltaTime) {
     }
   }
   
-  // Rest of the update method remains the same...
-  // (Omitted for brevity)
-  
-  // Update visible entities for rendering optimization
-  try {
-    this.updateVisibleEntities();
-  } catch (error) {
-    console.error("Error in updateVisibleEntities:", error);
-  }
-  
-  // Update performance stats
-  this.stats.updateTime = performance.now() - updateStart;
-}
-  
-update(deltaTime) {
-  // Scale delta time by time scale (for slow-motion effects)
-  const scaledDeltaTime = deltaTime * this.timeScale;
-  
-  // Performance measurement
-  const updateStart = performance.now();
-  
-  // Verificar se o jogo está inicializado corretamente
-  if (!this.worldSize) {
-    console.error("worldSize is undefined. Initializing with default value.");
-    this.worldSize = 6000; // Valor padrão
-  }
-  
-  // Update battle royale mode
-  if (this.gameMode === 'battle-royale') {
-    this.updateBattleRoyale(scaledDeltaTime);
-  }
-  
-  // Update team scores
-  if (this.gameMode === 'teams') {
-    this.updateTeamScores();
-  }
-  
-  // Update spatial grid
-  this.updateSpatialGrid();
-  
-  // Update player
-  if (this.player && !this.player.isDead) {
-    const playerUpdateStart = performance.now();
-    this.player.update(scaledDeltaTime);
-    this.centerCamera();
-    
-    // Check if player is out of bounds
-    this.keepEntityInBounds(this.player);
-    
-    // Apply battle royale damage if outside safe zone
-    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
-      const dx = this.player.x - this.battleRoyaleState.safeZoneX;
-      const dy = this.player.y - this.battleRoyaleState.safeZoneY;
-      const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
-      
-      if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
-        this.player.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
-      }
-    }
-    
-    // Check achievements
-    if (this.achievements) {
-      this.achievements.checkAchievements(this.player);
-    }
-    
-    this.stats.playerUpdateTime = performance.now() - playerUpdateStart;
-  } else if (this.player && this.player.isDead) {
-    this.handleGameOver();
-  }
-  
   // Update AI players
   const aiUpdateStart = performance.now();
   if (this.ais && this.ais.length > 0) {
     this.ais.forEach(ai => {
       if (!ai.isDead) {
-        ai.update(scaledDeltaTime);
-        
-        // Keep AI in bounds
-        this.keepEntityInBounds(ai);
-        
-        // Apply battle royale damage if outside safe zone
-        if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
-          const dx = ai.x - this.battleRoyaleState.safeZoneX;
-          const dy = ai.y - this.battleRoyaleState.safeZoneY;
-          const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
+        try {
+          ai.update(scaledDeltaTime);
           
-          if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
-            ai.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
+          // Keep AI in bounds
+          this.keepEntityInBounds(ai);
+          
+          // Apply battle royale damage if outside safe zone
+          if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
+            const dx = ai.x - this.battleRoyaleState.safeZoneX;
+            const dy = ai.y - this.battleRoyaleState.safeZoneY;
+            const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
+            
+            if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
+              ai.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
+            }
           }
+        } catch (error) {
+          console.error("Error updating AI:", error);
         }
       } else {
         // Queue dead AIs for removal
@@ -803,27 +792,43 @@ update(deltaTime) {
   // Update food
   if (this.foods && this.foods.length > 0) {
     this.foods.forEach(food => {
-      food.update(scaledDeltaTime);
+      try {
+        food.update(scaledDeltaTime);
+      } catch (error) {
+        console.error("Error updating food:", error);
+      }
     });
   }
   
   // Update viruses
   if (this.viruses && this.viruses.length > 0) {
     this.viruses.forEach(virus => {
-      virus.update(scaledDeltaTime);
+      try {
+        virus.update(scaledDeltaTime);
+      } catch (error) {
+        console.error("Error updating virus:", error);
+      }
     });
   }
   
   // Update power-ups
   if (this.powerUps && this.powerUps.length > 0) {
     this.powerUps.forEach(powerUp => {
-      powerUp.update(scaledDeltaTime);
+      try {
+        powerUp.update(scaledDeltaTime);
+      } catch (error) {
+        console.error("Error updating power-up:", error);
+      }
     });
   }
   
   // Update particles
   if (this.particles) {
-    this.particles.update(scaledDeltaTime);
+    try {
+      this.particles.update(scaledDeltaTime);
+    } catch (error) {
+      console.error("Error updating particles:", error);
+    }
   }
   
   // Only add new AIs in classic mode or if battle royale hasn't started yet
@@ -847,7 +852,18 @@ update(deltaTime) {
   }
   
   // Update visible entities for rendering optimization
-  this.updateVisibleEntities();
+  try {
+    this.updateVisibleEntities();
+  } catch (error) {
+    console.error("Error in updateVisibleEntities:", error);
+  }
+  
+  // Process removal queues
+  try {
+    this.processRemovalQueues();
+  } catch (error) {
+    console.error("Error in processRemovalQueues:", error);
+  }
   
   // Update performance stats
   this.stats.updateTime = performance.now() - updateStart;
@@ -1197,50 +1213,57 @@ updateSpatialGrid() {
   }
   
   // Add AI cells to grid
-  this.ais.forEach(ai => {
-    if (!ai || ai.isDead) return;
-    
-    ai.cells.forEach(cell => {
-      if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius)) return;
-      this.addEntityToGrid(cell.x, cell.y, cell.radius, { type: 'ai', cell, parent: ai });
+  if (this.ais && this.ais.length > 0) {
+    this.ais.forEach(ai => {
+      if (!ai || ai.isDead) return;
+      
+      ai.cells.forEach(cell => {
+        if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius)) return;
+        this.addEntityToGrid(cell.x, cell.y, cell.radius, { type: 'ai', cell, parent: ai });
+      });
     });
+  }
+}
+  
+ addEntitiesToGrid(entities, type) {
+  if (!entities || !Array.isArray(entities)) return;
+  
+  entities.forEach(entity => {
+    if (!entity || isNaN(entity.x) || isNaN(entity.y) || isNaN(entity.radius)) return;
+    this.addEntityToGrid(entity.x, entity.y, entity.radius, { type, ...entity });
   });
 }
   
-  addEntitiesToGrid(entities, type) {
-    entities.forEach(entity => {
-      this.addEntityToGrid(entity.x, entity.y, entity.radius, { type, ...entity });
-    });
-  }
-  
   addEntityToGrid(x, y, radius, entity) {
-    // Calculate grid cell coordinates
-    const cellX = Math.floor(x / this.gridCellSize);
-    const cellY = Math.floor(y / this.gridCellSize);
-    
-    // Add to grid cells that this entity overlaps
-    for (let i = -1; i <= 1; i++) {
-      for (let j = -1; j <= 1; j++) {
-        const gridX = cellX + i;
-        const gridY = cellY + j;
-        
-        // Skip invalid grid cells
-        if (gridX < 0 || gridY < 0 || 
-            gridX >= Math.ceil(this.worldSize / this.gridCellSize) || 
-            gridY >= Math.ceil(this.worldSize / this.gridCellSize)) {
-          continue;
-        }
-        
-        const cellKey = `${gridX},${gridY}`;
-        
-        if (!this.spatialGrid[cellKey]) {
-          this.spatialGrid[cellKey] = [];
-        }
-        
-        this.spatialGrid[cellKey].push(entity);
+  if (isNaN(x) || isNaN(y) || isNaN(radius) || !entity) return;
+  
+  // Calculate grid cell coordinates
+  const cellX = Math.floor(x / this.gridCellSize);
+  const cellY = Math.floor(y / this.gridCellSize);
+  
+  // Add to grid cells that this entity overlaps
+  for (let i = -1; i <= 1; i++) {
+    for (let j = -1; j <= 1; j++) {
+      const gridX = cellX + i;
+      const gridY = cellY + j;
+      
+      // Skip invalid grid cells
+      if (gridX < 0 || gridY < 0 || 
+          gridX >= Math.ceil(this.worldSize / this.gridCellSize) || 
+          gridY >= Math.ceil(this.worldSize / this.gridCellSize)) {
+        continue;
       }
+      
+      const cellKey = `${gridX},${gridY}`;
+      
+      if (!this.spatialGrid[cellKey]) {
+        this.spatialGrid[cellKey] = [];
+      }
+      
+      this.spatialGrid[cellKey].push(entity);
     }
   }
+}
   
 getEntitiesInRange(x, y, radius, types) {
   // Validate input parameters

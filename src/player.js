@@ -286,210 +286,63 @@ initCellMembrane(cell) {
   }
 }
 
+
 update(deltaTime) {
   // Scale delta time by time scale (for slow-motion effects)
-  const scaledDeltaTime = deltaTime * this.timeScale;
+  const scaledDeltaTime = deltaTime * (this.timeScale || 1);
   
-  // Performance measurement
-  const updateStart = performance.now();
+  // Skip update if player is dead
+  if (this.isDead) return;
   
-  // Verify if the game is initialized correctly
-  if (!this.worldSize || isNaN(this.worldSize)) {
-    console.error("worldSize is undefined or invalid. Initializing with default value.");
-    this.worldSize = 6000; // Default value
+  // Update speed based on size
+  this.updateSpeedBasedOnSize();
+  
+  // Move towards target
+  this.moveTowardsTarget(scaledDeltaTime);
+  
+  // Check collisions
+  if (this.game && typeof this.game.getEntitiesInRange === 'function') {
+    this.checkCollisions();
   }
   
-  // Update battle royale mode
-  if (this.gameMode === 'battle-royale') {
-    try {
-      this.updateBattleRoyale(scaledDeltaTime);
-    } catch (error) {
-      console.error("Error in updateBattleRoyale:", error);
-    }
-  }
+  // Update cells
+  this.updateCells(scaledDeltaTime);
   
-  // Update team scores
-  if (this.gameMode === 'teams') {
-    try {
-      this.updateTeamScores();
-    } catch (error) {
-      console.error("Error in updateTeamScores:", error);
-    }
-  }
-  
-  // Update spatial grid
-  try {
-    this.updateSpatialGrid();
-  } catch (error) {
-    console.error("Error in updateSpatialGrid:", error);
-  }
-  
-  // Update player with error handling
-  if (this.player && !this.player.isDead) {
-    const playerUpdateStart = performance.now();
-    
-    try {
-      this.player.update(scaledDeltaTime);
-    } catch (error) {
-      console.error("Error in player.update:", error);
-      
-      // Try to recover player if possible
-      if (isNaN(this.player.x) || isNaN(this.player.y)) {
-        this.player.x = this.worldSize / 2;
-        this.player.y = this.worldSize / 2;
-        this.player.targetX = this.player.x;
-        this.player.targetY = this.player.y;
-      }
-    }
-    
-    try {
-      this.centerCamera();
-    } catch (error) {
-      console.error("Error in centerCamera:", error);
-    }
-    
-    // Check if player is out of bounds
-    try {
-      this.keepEntityInBounds(this.player);
-    } catch (error) {
-      console.error("Error in keepEntityInBounds:", error);
-    }
-    
-    // Apply battle royale damage if outside safe zone
-    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
-      try {
-        const dx = this.player.x - this.battleRoyaleState.safeZoneX;
-        const dy = this.player.y - this.battleRoyaleState.safeZoneY;
-        const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
-          this.player.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
-        }
-      } catch (error) {
-        console.error("Error applying battle royale damage:", error);
-      }
-    }
-    
-    // Check achievements
-    if (this.achievements) {
-      try {
-        this.achievements.checkAchievements(this.player);
-      } catch (error) {
-        console.error("Error in checkAchievements:", error);
-      }
-    }
-    
-    this.stats.playerUpdateTime = performance.now() - playerUpdateStart;
-  } else if (this.player && this.player.isDead) {
-    try {
-      this.handleGameOver();
-    } catch (error) {
-      console.error("Error in handleGameOver:", error);
-    }
-  }
-  
-  // Update AI players
-  const aiUpdateStart = performance.now();
-  if (this.ais && this.ais.length > 0) {
-    this.ais.forEach(ai => {
-      if (!ai.isDead) {
-        try {
-          ai.update(scaledDeltaTime);
-          
-          // Keep AI in bounds
-          this.keepEntityInBounds(ai);
-          
-          // Apply battle royale damage if outside safe zone
-          if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
-            const dx = ai.x - this.battleRoyaleState.safeZoneX;
-            const dy = ai.y - this.battleRoyaleState.safeZoneY;
-            const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
-            
-            if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
-              ai.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
-            }
-          }
-        } catch (error) {
-          console.error("Error updating AI:", error);
-        }
-      } else {
-        // Queue dead AIs for removal
-        this.removalQueues.ais.push(ai);
-      }
-    });
-  }
-  this.stats.aiTime = performance.now() - aiUpdateStart;
-  
-  // Update food
-  if (this.foods && this.foods.length > 0) {
-    this.foods.forEach(food => {
-      try {
-        food.update(scaledDeltaTime);
-      } catch (error) {
-        console.error("Error updating food:", error);
-      }
-    });
-  }
-  
-  // Update viruses
-  if (this.viruses && this.viruses.length > 0) {
-    this.viruses.forEach(virus => {
-      try {
-        virus.update(scaledDeltaTime);
-      } catch (error) {
-        console.error("Error updating virus:", error);
-      }
-    });
-  }
+  // Update cell membranes
+  this.updateCellMembranes(scaledDeltaTime);
   
   // Update power-ups
-  if (this.powerUps && this.powerUps.length > 0) {
-    this.powerUps.forEach(powerUp => {
-      try {
-        powerUp.update(scaledDeltaTime);
-      } catch (error) {
-        console.error("Error updating power-up:", error);
-      }
-    });
+  this.updatePowerUps(scaledDeltaTime);
+  
+  // Update score
+  this.updateScore();
+  
+  // Update eject cooldown
+  if (this.ejectCooldown > 0) {
+    this.ejectCooldown -= scaledDeltaTime * 1000;
   }
   
-  // Update particles
-  if (this.particles) {
-    try {
-      this.particles.update(scaledDeltaTime);
-    } catch (error) {
-      console.error("Error updating particles:", error);
-    }
+  // Apply magnet effect if active
+  if (this.powerUps.magnet.active) {
+    this.applyMagnetEffect();
   }
   
-  // Only add new AIs in classic mode or if battle royale hasn't started yet
-  if (this.gameMode === 'classic' || 
-      (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active)) {
-    this.replenishAIs();
+  // Apply freeze effect if active
+  if (this.powerUps.freeze.active) {
+    this.applyFreezeEffect();
   }
   
-  // Replenish food in batches for better performance
-  //this.replenishFood();
+  // Update effects
+  this.updateEffects(scaledDeltaTime);
   
-  // Replenish viruses
-  //this.replenishViruses();
+  // Regenerate health
+  this.regenerateHealth(scaledDeltaTime);
   
-  // Replenish power-ups
- // this.replenishPowerUps();
+  // Update notifications
+  this.updateNotifications(scaledDeltaTime);
   
-  // Check for battle royale start
-  if (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active && this.gameTime > 30) {
-    this.startBattleRoyale();
-  }
-  
-  // Update visible entities for rendering optimization
-  //this.updateVisibleEntities();
-  
-  // Process removal queues
-  //this.processRemovalQueues();
-  
-  // Update performance stats
-  this.stats.updateTime = performance.now() - updateStart;
+  // Update stats
+  this.updateStats(scaledDeltaTime);
 }
 
 	keepEntityInBounds(entity) {
@@ -684,6 +537,37 @@ validateCells() {
       cell.x = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.x));
       cell.y = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.y));
     }
+    
+    // Ensure cell has valid mass and radius
+    if (isNaN(cell.mass) || cell.mass <= 0) {
+      cell.mass = Math.PI * this.baseRadius * this.baseRadius;
+    }
+    if (isNaN(cell.radius) || cell.radius <= 0) {
+      cell.radius = Math.sqrt(cell.mass / Math.PI);
+    }
+    
+    // Ensure cell has a valid membrane
+    if (!cell.membrane || typeof cell.membrane !== 'object') {
+      cell.membrane = {
+        points: 20,
+        elasticity: 0.3,
+        distortion: 0.15,
+        oscillation: 0.05,
+        oscillationSpeed: 1.5,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      };
+    }
+    
+    // Ensure cell has a valid ID
+    if (!cell.id) {
+      cell.id = 'cell-' + Date.now() + '-' + this.cells.indexOf(cell);
+    }
+    
+    // Ensure cell has an effects array
+    if (!Array.isArray(cell.effects)) {
+      cell.effects = [];
+    }
   });
 
   // Update player position to center of mass with validation
@@ -875,12 +759,20 @@ moveTowardsTarget(deltaTime) {
     this.y = this.game ? this.game.worldSize / 2 : 3000;
   }
 
+  // Ensure cells array exists and is valid
+  if (!this.cells || !Array.isArray(this.cells) || this.cells.length === 0) {
+    console.error("Invalid cells array:", this.cells);
+    return;
+  }
+
   this.cells.forEach(cell => {
     // Skip cells with invalid coordinates
-    if (isNaN(cell.x) || isNaN(cell.y)) {
-      console.error("Invalid cell coordinates:", cell.x, cell.y);
-      cell.x = this.x;
-      cell.y = this.y;
+    if (!cell || isNaN(cell.x) || isNaN(cell.y)) {
+      console.error("Invalid cell coordinates:", cell ? { x: cell.x, y: cell.y } : cell);
+      if (cell) {
+        cell.x = this.x;
+        cell.y = this.y;
+      }
       return;
     }
 
@@ -895,6 +787,18 @@ moveTowardsTarget(deltaTime) {
     }
     
     if (distance > 0) {
+      // Validate cell radius
+      if (isNaN(cell.radius) || cell.radius <= 0) {
+        console.error("Invalid cell radius:", cell.radius);
+        cell.radius = this.baseRadius || 20;
+      }
+      
+      // Validate speed
+      if (isNaN(this.speed) || this.speed <= 0) {
+        console.error("Invalid speed:", this.speed);
+        this.speed = this.baseSpeed || 6.5;
+      }
+      
       const moveSpeed = this.speed * (30 / cell.radius) * deltaTime;
       
       // Validate moveSpeed
@@ -951,14 +855,16 @@ updateCenterOfMass() {
   let validCellCount = 0;
   
   // Calculate center of mass only from valid cells
-  this.cells.forEach(cell => {
-    if (!isNaN(cell.x) && !isNaN(cell.y) && !isNaN(cell.mass) && cell.mass > 0) {
-      totalX += cell.x * cell.mass;
-      totalY += cell.y * cell.mass;
-      totalMass += cell.mass;
-      validCellCount++;
-    }
-  });
+  if (this.cells && Array.isArray(this.cells)) {
+    this.cells.forEach(cell => {
+      if (cell && !isNaN(cell.x) && !isNaN(cell.y) && !isNaN(cell.mass) && cell.mass > 0) {
+        totalX += cell.x * cell.mass;
+        totalY += cell.y * cell.mass;
+        totalMass += cell.mass;
+        validCellCount++;
+      }
+    });
+  }
   
   // Only update position if we have valid data
   if (validCellCount > 0 && totalMass > 0) {
@@ -973,10 +879,10 @@ updateCenterOfMass() {
       console.error("Invalid center of mass calculation:", totalX, totalY, totalMass);
       // Don't update the position if the calculation is invalid
     }
-  } else if (this.cells.length > 0) {
+  } else if (this.cells && this.cells.length > 0) {
     // If we can't calculate center of mass but have cells, use the first valid cell
     for (const cell of this.cells) {
-      if (!isNaN(cell.x) && !isNaN(cell.y)) {
+      if (cell && !isNaN(cell.x) && !isNaN(cell.y)) {
         this.x = cell.x;
         this.y = cell.y;
         break;
@@ -1001,6 +907,10 @@ updateCenterOfMass() {
 
 
 checkCollisions() {
+  if (!this.game || typeof this.game.getEntitiesInRange !== 'function') {
+    return;
+  }
+  
   // Get nearby entities
   const nearbyEntities = this.game.getEntitiesInRange(
     this.x, this.y, 
@@ -1009,16 +919,24 @@ checkCollisions() {
   );
   
   // Check food collisions
-  this.checkFoodCollisions(nearbyEntities.foods);
+  if (nearbyEntities.foods && nearbyEntities.foods.length > 0) {
+    this.checkFoodCollisions(nearbyEntities.foods);
+  }
   
   // Check virus collisions
-  this.checkVirusCollisions(nearbyEntities.viruses);
+  if (nearbyEntities.viruses && nearbyEntities.viruses.length > 0) {
+    this.checkVirusCollisions(nearbyEntities.viruses);
+  }
   
   // Check power-up collisions
-  this.checkPowerUpCollisions(nearbyEntities.powerUps);
+  if (nearbyEntities.powerUps && nearbyEntities.powerUps.length > 0) {
+    this.checkPowerUpCollisions(nearbyEntities.powerUps);
+  }
   
   // Check AI collisions
-  this.checkAICollisions(nearbyEntities.ais);
+  if (nearbyEntities.ais && nearbyEntities.ais.length > 0) {
+    this.checkAICollisions(nearbyEntities.ais);
+  }
 }
 
 // Correção do arquivo player.js - Função checkFoodCollisions
