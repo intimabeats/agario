@@ -334,6 +334,9 @@ update(deltaTime) {
   // Update score
   this.updateScore();
   
+  // Update center of mass
+  this.updateCenterOfMass();
+  
   // Update max score and size stats
   if (this.score > this.stats.maxScore) {
     this.stats.maxScore = this.score;
@@ -409,12 +412,10 @@ update(deltaTime) {
   if (this.damageImmunity && Date.now() > this.damageImmunityTime) {
     this.damageImmunity = false;
   }
-  
-  // Debug cells
-  this.debugCells();
 }
 
-	validateCells() {
+
+validateCells() {
   this.cells = this.cells.filter(cell => {
     if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius) || cell.radius <= 0) {
       console.error("Invalid cell detected, removing:", JSON.stringify(cell));
@@ -426,8 +427,8 @@ update(deltaTime) {
   if (this.cells.length === 0) {
     console.error("All cells were invalid, creating a new one");
     this.cells.push({
-      x: this.x,
-      y: this.y,
+      x: isNaN(this.x) ? this.game.worldSize / 2 : this.x,
+      y: isNaN(this.y) ? this.game.worldSize / 2 : this.y,
       radius: this.baseRadius,
       mass: Math.PI * this.baseRadius * this.baseRadius,
       velocityX: 0,
@@ -447,7 +448,35 @@ update(deltaTime) {
     });
     this.initCellMembranes();
   }
+
+  // Ensure all cells have valid coordinates
+  this.cells.forEach(cell => {
+    if (isNaN(cell.x) || isNaN(cell.y)) {
+      cell.x = isNaN(this.x) ? this.game.worldSize / 2 : this.x;
+      cell.y = isNaN(this.y) ? this.game.worldSize / 2 : this.y;
+    }
+    // Ensure cell is within world bounds
+    cell.x = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.x));
+    cell.y = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.y));
+  });
+
+  // Update player position to center of mass
+  this.updateCenterOfMass();
+
+  // Debug log
+  console.log("Debugging cells:");
+  this.cells.forEach((cell, index) => {
+    console.log(`Cell ${index}:`, {
+      x: cell.x,
+      y: cell.y,
+      radius: cell.radius,
+      mass: cell.mass,
+      velocityX: cell.velocityX,
+      velocityY: cell.velocityY
+    });
+  });
 }
+
 
 
 	debugCells() {
@@ -576,214 +605,59 @@ updateCellMembranes(deltaTime) {
   }
 // Correção completa do arquivo player.js - Função moveTowardsTarget
 moveTowardsTarget(deltaTime) {
-  // Verify if coordinates are valid
-  if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
-    console.error("Invalid coordinates detected:", this.x, this.y, this.targetX, this.targetY);
-    // Reset coordinates to valid values
-    if (this.game && this.game.worldSize) {
-      this.x = this.game.worldSize / 2;
-      this.y = this.game.worldSize / 2;
-    } else {
-      this.x = 3000; // Default value
-      this.y = 3000; // Default value
-    }
-    this.targetX = this.x;
-    this.targetY = this.y;
-    
-    // Reset cells
-    if (this.cells && this.cells.length > 0) {
-      this.cells.forEach(cell => {
-        cell.x = this.x;
-        cell.y = this.y;
-        cell.velocityX = 0;
-        cell.velocityY = 0;
-      });
-    }
-    
+  if (isNaN(this.targetX) || isNaN(this.targetY)) {
+    console.error("Invalid target coordinates:", this.targetX, this.targetY);
     return;
   }
-  
-  // Verify if there are cells
-  if (!this.cells || this.cells.length === 0) {
-    console.error("No cells to move");
-    return;
-  }
-  
-  // Calculate movement for each cell with improved physics
-  this.cells.forEach((cell, index) => {
-    // Verify if cell is valid
-    if (!cell) {
-      console.error("Invalid cell at index", index);
-      return;
-    }
-    
-    // Verify if cell coordinates are valid
+
+  this.cells.forEach(cell => {
     if (isNaN(cell.x) || isNaN(cell.y)) {
       console.error("Invalid cell coordinates:", cell.x, cell.y);
-      // Reset cell coordinates
-      cell.x = this.x;
-      cell.y = this.y;
-      cell.velocityX = 0;
-      cell.velocityY = 0;
       return;
     }
-    
-    // Verify if cell radius is valid
-    if (isNaN(cell.radius) || cell.radius <= 0) {
-      console.error("Invalid cell radius:", cell.radius);
-      cell.radius = this.baseRadius;
-      cell.mass = Math.PI * cell.radius * cell.radius;
-      return;
-    }
-    
+
     const dx = this.targetX - cell.x;
     const dy = this.targetY - cell.y;
-    
-    // Verify if dx and dy are valid
-    if (isNaN(dx) || isNaN(dy)) {
-      console.error("Invalid dx or dy:", dx, dy);
-      return;
-    }
-    
     const distance = Math.sqrt(dx * dx + dy * dy);
     
-    // Verify if distance is valid
-    if (isNaN(distance)) {
-      console.error("Invalid distance:", distance);
-      return;
-    }
-    
     if (distance > 0) {
-      // Calculate speed based on cell size
-      const sizeSpeedFactor = Math.max(0.6, Math.min(2, 40 / cell.radius));
-      const moveSpeed = this.speed * sizeSpeedFactor;
+      const moveSpeed = this.speed * (30 / cell.radius) * deltaTime;
+      const moveX = (dx / distance) * Math.min(moveSpeed, distance);
+      const moveY = (dy / distance) * Math.min(moveSpeed, distance);
       
-      // Verify if speed is valid
-      if (isNaN(moveSpeed)) {
-        console.error("Invalid move speed:", moveSpeed, this.speed, sizeSpeedFactor);
-        return;
-      }
+      cell.x += moveX;
+      cell.y += moveY;
       
-      // Calculate target velocity
-      const targetVelocityX = (dx / distance) * moveSpeed;
-      const targetVelocityY = (dy / distance) * moveSpeed;
-      
-      // Verify if target velocities are valid
-      if (isNaN(targetVelocityX) || isNaN(targetVelocityY)) {
-        console.error("Invalid target velocity:", targetVelocityX, targetVelocityY);
-        return;
-      }
-      
-      // Initialize velocities if undefined
-      if (cell.velocityX === undefined) cell.velocityX = 0;
-      if (cell.velocityY === undefined) cell.velocityY = 0;
-      
-      // Verify if current velocities are valid
-      if (isNaN(cell.velocityX) || isNaN(cell.velocityY)) {
-        console.error("Invalid current velocity:", cell.velocityX, cell.velocityY);
-        cell.velocityX = 0;
-        cell.velocityY = 0;
-      }
-      
-      // Accelerate towards target velocity
-      const newVelocityX = cell.velocityX + (targetVelocityX - cell.velocityX) * this.acceleration;
-      const newVelocityY = cell.velocityY + (targetVelocityY - cell.velocityY) * this.acceleration;
-      
-      // Verify if new velocities are valid
-      if (isNaN(newVelocityX) || isNaN(newVelocityY)) {
-        console.error("Invalid new velocity:", newVelocityX, newVelocityY);
-        return;
-      }
-      
-      cell.velocityX = newVelocityX;
-      cell.velocityY = newVelocityY;
-      
-      // Apply velocity
-      const newX = cell.x + cell.velocityX * deltaTime;
-      const newY = cell.y + cell.velocityY * deltaTime;
-      
-      // Verify if new coordinates are valid
-      if (isNaN(newX) || isNaN(newY)) {
-        console.error("Invalid new position:", newX, newY);
-        return;
-      }
-      
-      cell.x = newX;
-      cell.y = newY;
-      
-      // Keep within world bounds
-      if (this.game && this.game.worldSize) {
-        cell.x = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.x));
-        cell.y = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.y));
-      } else {
-        // Use default values if worldSize is not available
-        cell.x = Math.max(cell.radius, Math.min(6000 - cell.radius, cell.x));
-        cell.y = Math.max(cell.radius, Math.min(6000 - cell.radius, cell.y));
-      }
-    } else {
-      // Decelerate when close to target
-      if (cell.velocityX) cell.velocityX *= (1 - this.deceleration);
-      if (cell.velocityY) cell.velocityY *= (1 - this.deceleration);
-      
-      // Stop completely if velocity is very small
-      if (Math.abs(cell.velocityX) < 0.01) cell.velocityX = 0;
-      if (Math.abs(cell.velocityY) < 0.01) cell.velocityY = 0;
+      // Keep cell within world bounds
+      cell.x = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.x));
+      cell.y = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.y));
     }
   });
-  
-  // Update player position to the center of mass
+
+  // Update player position to center of mass
   this.updateCenterOfMass();
 }
+
 
 updateCenterOfMass() {
   let totalX = 0;
   let totalY = 0;
   let totalMass = 0;
   
-  // Verify if there are cells
-  if (!this.cells || this.cells.length === 0) {
-    console.error("No cells to calculate center of mass");
-    return;
-  }
-  
   this.cells.forEach(cell => {
-    // Verify if cell coordinates and mass are valid
-    if (isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.mass) || cell.mass <= 0) {
-      console.error("Invalid cell data for center of mass calculation:", cell.x, cell.y, cell.mass);
-      return;
-    }
-    
     totalX += cell.x * cell.mass;
     totalY += cell.y * cell.mass;
     totalMass += cell.mass;
   });
   
-  // Avoid division by zero
-  if (totalMass <= 0) {
-    console.error("Total mass is zero or negative:", totalMass);
-    return;
-  }
-  
-  this.x = totalX / totalMass;
-  this.y = totalY / totalMass;
-  
-  // Verify if calculated coordinates are valid
-  if (isNaN(this.x) || isNaN(this.y)) {
-    console.error("Invalid center of mass calculated:", totalX, totalY, totalMass);
-    
-    // Use the position of the first cell as fallback
-    if (this.cells.length > 0) {
-      this.x = this.cells[0].x;
-      this.y = this.cells[0].y;
-    } else if (this.game && this.game.worldSize) {
-      this.x = this.game.worldSize / 2;
-      this.y = this.game.worldSize / 2;
-    } else {
-      this.x = 3000; // Default value
-      this.y = 3000; // Default value
-    }
+  if (totalMass > 0) {
+    this.x = totalX / totalMass;
+    this.y = totalY / totalMass;
+  } else {
+    console.error("Total mass is zero, cannot update center of mass");
   }
 }
+
 
 checkCollisions() {
   // Get nearby entities

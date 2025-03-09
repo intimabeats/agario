@@ -362,15 +362,9 @@ setPlayer(player) {
   
   this.player = player;
   
-  // Verify if worldSize is defined
-  if (!this.worldSize || isNaN(this.worldSize)) {
-    console.error("worldSize is undefined or invalid in setPlayer. Using default value.");
-    this.worldSize = 6000; // Default value
-  }
-  
   // Ensure player's initial position is valid and centered in the world
-  player.x = isNaN(player.x) ? this.worldSize / 2 : player.x;
-  player.y = isNaN(player.y) ? this.worldSize / 2 : player.y;
+  player.x = this.worldSize / 2;
+  player.y = this.worldSize / 2;
   player.targetX = player.x;
   player.targetY = player.y;
   
@@ -399,18 +393,8 @@ setPlayer(player) {
   } else {
     // Update all cells with the correct position
     player.cells.forEach(cell => {
-      cell.x = isNaN(cell.x) ? player.x : cell.x;
-      cell.y = isNaN(cell.y) ? player.y : cell.y;
-      
-      // Ensure velocities are initialized
-      cell.velocityX = isNaN(cell.velocityX) ? 0 : cell.velocityX;
-      cell.velocityY = isNaN(cell.velocityY) ? 0 : cell.velocityY;
-      
-      // Ensure radius and mass are valid
-      if (isNaN(cell.radius) || cell.radius <= 0) {
-        cell.radius = player.baseRadius;
-        cell.mass = Math.PI * cell.radius * cell.radius;
-      }
+      cell.x = player.x;
+      cell.y = player.y;
     });
   }
   
@@ -443,7 +427,6 @@ setPlayer(player) {
     this.achievements.initPlayer(player);
   }
   
-  // Log player position for debugging
   console.log("Player set in game:", player.x, player.y, "Target:", player.targetX, player.targetY);
   console.log("Cell coordinates:", JSON.stringify(player.cells[0]));
 }
