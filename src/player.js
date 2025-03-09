@@ -1,7 +1,7 @@
 import { Skin } from './skins.js';
 
 export class Player {
-  constructor(name, color, game) {
+ constructor(name, color, game) {
   this.id = 'player-' + Date.now();
   this.name = name || 'Player';
   this.color = color || '#ff5252';
@@ -15,9 +15,9 @@ export class Player {
   // Verify if worldSize is defined
   const worldSize = game && game.worldSize ? game.worldSize : 6000;
   
-  // Position and movement - Start at center of map
-  this.x = worldSize / 2;
-  this.y = worldSize / 2;
+  // Verify and set initial position
+  this.x = isNaN(worldSize) ? 3000 : worldSize / 2;
+  this.y = isNaN(worldSize) ? 3000 : worldSize / 2;
   this.targetX = this.x;
   this.targetY = this.y;
   this.baseSpeed = 6.5; // Base speed for better player experience
@@ -62,12 +62,12 @@ export class Player {
   // State
   this.isDead = false;
   
-  // Create initial cell
+  // Create initial cell with additional checks
   this.cells = [{ 
-    x: this.x, 
-    y: this.y, 
-    radius: this.radius, 
-    mass: this.mass,
+    x: isNaN(this.x) ? 3000 : this.x, 
+    y: isNaN(this.y) ? 3000 : this.y, 
+    radius: this.baseRadius, 
+    mass: Math.PI * this.baseRadius * this.baseRadius,
     velocityX: 0,
     velocityY: 0,
     membrane: {
@@ -190,6 +190,7 @@ export class Player {
   this.skipFrames = 0;
   
   console.log("Player created:", this.x, this.y, "Target:", this.targetX, this.targetY);
+  console.log("Initial cell:", JSON.stringify(this.cells[0]));
 }
 
 initCellMembranes() {
@@ -286,6 +287,8 @@ initCellMembrane(cell) {
 }
 
 update(deltaTime) {
+  this.validateCells();
+
   // Track time played
   this.stats.timePlayed += deltaTime;
   
@@ -299,97 +302,18 @@ update(deltaTime) {
   if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
     console.error("Invalid coordinates detected in update:", this.x, this.y, this.targetX, this.targetY);
     // Reset coordinates to valid values
-    if (this.game && this.game.worldSize) {
-      this.x = this.game.worldSize / 2;
-      this.y = this.game.worldSize / 2;
-    } else {
-      this.x = 3000; // Default value
-      this.y = 3000; // Default value
-    }
+    this.x = this.game.worldSize / 2;
+    this.y = this.game.worldSize / 2;
     this.targetX = this.x;
     this.targetY = this.y;
     
     // Reset cells
-    if (this.cells && this.cells.length > 0) {
-      this.cells.forEach(cell => {
-        if (cell) {
-          cell.x = this.x;
-          cell.y = this.y;
-          cell.velocityX = 0;
-          cell.velocityY = 0;
-        }
-      });
-    }
-  }
-  
-  // Verify if cells are valid
-  if (!this.cells || this.cells.length === 0) {
-    console.error("No cells available in update");
-    // Create a default cell
-    this.cells = [{
-      x: this.x,
-      y: this.y,
-      radius: this.baseRadius || 20,
-      mass: Math.PI * (this.baseRadius || 20) * (this.baseRadius || 20),
-      velocityX: 0,
-      velocityY: 0,
-      membrane: {
-        points: 20,
-        elasticity: 0.3,
-        distortion: 0.15,
-        oscillation: 0.05,
-        oscillationSpeed: 1.5,
-        phase: Math.random() * Math.PI * 2,
-        vertices: []
-      },
-      z: 0,
-      id: 'cell-' + Date.now() + '-0',
-      effects: []
-    }];
-    
-    // Initialize the cell membrane
-    if (typeof this.initCellMembranes === 'function') {
-      this.initCellMembranes();
-    }
-  }
-  
-  // Verify each cell individually
-  this.cells = this.cells.filter(cell => {
-    if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius) || isNaN(cell.mass)) {
-      console.error("Invalid cell detected, removing:", cell);
-      return false;
-    }
-    return true;
-  });
-  
-  // If all cells were removed, create a new one
-  if (this.cells.length === 0) {
-    console.error("All cells were invalid, creating a new one");
-    this.cells.push({
-      x: this.x,
-      y: this.y,
-      radius: this.baseRadius || 20,
-      mass: Math.PI * (this.baseRadius || 20) * (this.baseRadius || 20),
-      velocityX: 0,
-      velocityY: 0,
-      membrane: {
-        points: 20,
-        elasticity: 0.3,
-        distortion: 0.15,
-        oscillation: 0.05,
-        oscillationSpeed: 1.5,
-        phase: Math.random() * Math.PI * 2,
-        vertices: []
-      },
-      z: 0,
-      id: 'cell-' + Date.now() + '-0',
-      effects: []
+    this.cells.forEach(cell => {
+      cell.x = this.x;
+      cell.y = this.y;
+      cell.velocityX = 0;
+      cell.velocityY = 0;
     });
-    
-    // Initialize the cell membrane
-    if (typeof this.initCellMembranes === 'function') {
-      this.initCellMembranes();
-    }
   }
   
   // Move towards target
@@ -485,7 +409,61 @@ update(deltaTime) {
   if (this.damageImmunity && Date.now() > this.damageImmunityTime) {
     this.damageImmunity = false;
   }
+  
+  // Debug cells
+  this.debugCells();
 }
+
+	validateCells() {
+  this.cells = this.cells.filter(cell => {
+    if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius) || cell.radius <= 0) {
+      console.error("Invalid cell detected, removing:", JSON.stringify(cell));
+      return false;
+    }
+    return true;
+  });
+
+  if (this.cells.length === 0) {
+    console.error("All cells were invalid, creating a new one");
+    this.cells.push({
+      x: this.x,
+      y: this.y,
+      radius: this.baseRadius,
+      mass: Math.PI * this.baseRadius * this.baseRadius,
+      velocityX: 0,
+      velocityY: 0,
+      membrane: {
+        points: 20,
+        elasticity: 0.3,
+        distortion: 0.15,
+        oscillation: 0.05,
+        oscillationSpeed: 1.5,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      },
+      z: 0,
+      id: 'cell-' + Date.now() + '-0',
+      effects: []
+    });
+    this.initCellMembranes();
+  }
+}
+
+
+	debugCells() {
+  console.log("Debugging cells:");
+  this.cells.forEach((cell, index) => {
+    console.log(`Cell ${index}:`, {
+      x: cell.x,
+      y: cell.y,
+      radius: cell.radius,
+      mass: cell.mass,
+      velocityX: cell.velocityX,
+      velocityY: cell.velocityY
+    });
+  });
+}
+
 
 updateCellMembranes(deltaTime) {
   if (!this.cells || this.cells.length === 0) {

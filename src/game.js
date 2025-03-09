@@ -363,39 +363,20 @@ setPlayer(player) {
   this.player = player;
   
   // Verify if worldSize is defined
-  if (!this.worldSize) {
-    console.error("worldSize is undefined in setPlayer. Using default value.");
+  if (!this.worldSize || isNaN(this.worldSize)) {
+    console.error("worldSize is undefined or invalid in setPlayer. Using default value.");
     this.worldSize = 6000; // Default value
   }
   
   // Ensure player's initial position is valid and centered in the world
-  player.x = this.worldSize / 2; // Start at center of map
-  player.y = this.worldSize / 2; // Start at center of map
+  player.x = isNaN(player.x) ? this.worldSize / 2 : player.x;
+  player.y = isNaN(player.y) ? this.worldSize / 2 : player.y;
   player.targetX = player.x;
   player.targetY = player.y;
   
   // Initialize player's cells with correct position
-  if (player.cells && player.cells.length > 0) {
-    // Update all cells with the correct position
-    player.cells.forEach(cell => {
-      cell.x = player.x;
-      cell.y = player.y;
-      
-      // Ensure velocities are initialized
-      if (cell.velocityX === undefined) cell.velocityX = 0;
-      if (cell.velocityY === undefined) cell.velocityY = 0;
-      
-      // Ensure radius and mass are valid
-      if (isNaN(cell.radius) || cell.radius <= 0) {
-        cell.radius = player.baseRadius;
-        cell.mass = Math.PI * cell.radius * cell.radius;
-      }
-    });
-  } else {
-    // Create a cell if none exists
-    if (!player.cells) player.cells = [];
-    
-    player.cells.push({
+  if (!player.cells || player.cells.length === 0) {
+    player.cells = [{
       x: player.x,
       y: player.y,
       radius: player.baseRadius,
@@ -414,12 +395,28 @@ setPlayer(player) {
       z: 0,
       id: 'cell-' + Date.now() + '-0',
       effects: []
+    }];
+  } else {
+    // Update all cells with the correct position
+    player.cells.forEach(cell => {
+      cell.x = isNaN(cell.x) ? player.x : cell.x;
+      cell.y = isNaN(cell.y) ? player.y : cell.y;
+      
+      // Ensure velocities are initialized
+      cell.velocityX = isNaN(cell.velocityX) ? 0 : cell.velocityX;
+      cell.velocityY = isNaN(cell.velocityY) ? 0 : cell.velocityY;
+      
+      // Ensure radius and mass are valid
+      if (isNaN(cell.radius) || cell.radius <= 0) {
+        cell.radius = player.baseRadius;
+        cell.mass = Math.PI * cell.radius * cell.radius;
+      }
     });
-    
-    // Initialize the cell membrane
-    if (typeof player.initCellMembranes === 'function') {
-      player.initCellMembranes();
-    }
+  }
+  
+  // Initialize the cell membrane
+  if (typeof player.initCellMembranes === 'function') {
+    player.initCellMembranes();
   }
   
   // Center camera on player
@@ -448,11 +445,7 @@ setPlayer(player) {
   
   // Log player position for debugging
   console.log("Player set in game:", player.x, player.y, "Target:", player.targetX, player.targetY);
-  
-  // Verify cell coordinates
-  if (player.cells && player.cells.length > 0) {
-    console.log("Cell coordinates:", player.cells[0].x, player.cells[0].y);
-  }
+  console.log("Cell coordinates:", JSON.stringify(player.cells[0]));
 }
   
   getTeamColor(teamName) {
