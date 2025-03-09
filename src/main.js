@@ -236,6 +236,19 @@ function initGame() {
   
   // Create new game instance
   game = new Game(canvas);
+  
+  // Verificar se o jogo foi criado corretamente
+  if (!game) {
+    console.error('Failed to create game instance!');
+    return;
+  }
+  
+  // Verificar se worldSize está definido
+  if (!game.worldSize) {
+    console.error('worldSize is undefined. Setting default value.');
+    game.worldSize = 6000; // Valor padrão
+  }
+  
   game.gameMode = selectedGameMode;
   
   // Create achievements
@@ -244,13 +257,19 @@ function initGame() {
   // Create player
   const player = new Player(playerName, selectedColor, game);
   
+  // Verificar se o jogador foi criado corretamente
+  if (!player) {
+    console.error('Failed to create player instance!');
+    return;
+  }
+  
   // Set player skin
   player.setSkin(selectedSkin);
   
   // Set player in game
   game.setPlayer(player);
   
-  // Setup controls - IMPORTANTE: Certifique-se de que isso está sendo chamado
+  // Setup controls
   setupControls(game, player);
   
   // Set audio preferences
@@ -283,6 +302,7 @@ function initGame() {
   // Adicionar log para debug
   console.log("Game initialized, player position:", player.x, player.y);
   console.log("Player target:", player.targetX, player.targetY);
+  console.log("Game worldSize:", game.worldSize);
 }
 
 

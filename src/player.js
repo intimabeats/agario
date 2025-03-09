@@ -2,64 +2,335 @@ import { Skin } from './skins.js';
 
 export class Player {
   constructor(name, color, game) {
-    this.id = 'player-' + Date.now();
-    this.name = name || 'Player';
-    this.color = color || '#ff5252';
-    this.game = game;
+  this.id = 'player-' + Date.now();
+  this.name = name || 'Player';
+  this.color = color || '#ff5252';
+  this.game = game;
+  
+  // Verificar se o jogo é válido
+  if (!game) {
+    console.error("Game object is missing in Player constructor");
+  }
+  
+  // Verificar se worldSize está definido
+  const worldSize = game && game.worldSize ? game.worldSize : 6000;
+  
+  // Position and movement - Iniciar no centro do mapa
+  this.x = worldSize / 2;
+  this.y = worldSize / 2;
+  this.targetX = this.x;
+  this.targetY = this.y;
+  this.baseSpeed = 6.5; // Base speed for better player experience
+  this.speed = this.baseSpeed;
+  this.acceleration = 0.2; // How quickly player reaches max speed
+  this.deceleration = 0.3; // How quickly player slows down
+  this.currentVelocityX = 0;
+  this.currentVelocityY = 0;
+  
+  // Movement smoothing
+  this.smoothingFactor = 0.2;
+  this.movementHistory = []; // For trail effects
+  this.movementHistoryMaxLength = 10;
+  
+  // Size and growth
+  this.baseRadius = 20;
+  this.radius = this.baseRadius;
+  this.mass = Math.PI * this.radius * this.radius;
+  this.score = 0;
+  
+  // Growth and shrink rates
+  this.growthRate = 1.5;
+  this.shrinkRate = 0.005;
+  this.maxRadius = 500; // Maximum radius a cell can have
+  
+  // Ejection settings
+  this.ejectCooldown = 0;
+  this.ejectCooldownTime = 250;
+  this.ejectSize = 5; // Slightly larger ejected mass
+  this.ejectSpeed = 35; // Increased ejection speed
+  this.ejectDeceleration = 0.97; // Slower deceleration for longer travel
+  this.ejectDistance = 2.5; // Increased ejection distance
+  this.ejectMassAmount = 0.06; // Percentage of mass to eject
+  this.ejectMinMass = 20; // Minimum mass required to eject
+  
+  // Split settings
+  this.splitVelocity = 18; // Split velocity
+  this.splitCooldown = 10000; // 10 seconds cooldown
+  this.splitMinMass = 35; // Minimum mass required to split
+  this.mergeTime = 15000; // Time before cells can merge
+  
+  // State
+  this.isDead = false;
+  
+  // Create initial cell
+  this.cells = [{ 
+    x: this.x, 
+    y: this.y, 
+    radius: this.radius, 
+    mass: this.mass,
+    velocityX: 0,
+    velocityY: 0,
+    membrane: {
+      points: 20,
+      elasticity: 0.3,
+      distortion: 0.15,
+      oscillation: 0.05,
+      oscillationSpeed: 1.5,
+      phase: Math.random() * Math.PI * 2,
+      vertices: []
+    },
+    z: 0,
+    id: 'cell-' + Date.now() + '-0',
+    effects: []
+  }];
+  
+  // Health
+  this.health = 100;
+  this.maxHealth = 100;
+  this.healthRegenRate = 2; // Health points regenerated per second
+  this.damageImmunity = false; // For shield power-up
+  this.damageImmunityTime = 0;
+  
+  // Special abilities
+  this.canSplit = true;
+  this.splitCooldownTime = 0;
+  this.powerUps = {
+    speedBoost: { active: false, duration: 0, factor: 1.5, icon: '⚡' },
+    shield: { active: false, duration: 0, icon: '🛡️' },
+    massBoost: { active: false, duration: 0, factor: 1.2, icon: '⬆️' },
+    invisibility: { active: false, duration: 0, opacity: 0.3, icon: '👁️' },
+    magnet: { active: false, duration: 0, range: 200, icon: '🧲' },
+    freeze: { active: false, duration: 0, icon: '❄️' },
+    doubleScore: { active: false, duration: 0, factor: 2, icon: '💰' }
+  };
+  
+  // Experience and levels
+  this.experience = 0;
+  this.level = 1;
+  this.experienceToNextLevel = 1000;
+  this.levelBonuses = {
+    1: { description: "Starting level" },
+    2: { description: "Increased base size", baseRadius: 22 },
+    3: { description: "Faster regeneration", healthRegenRate: 3 },
+    4: { description: "Reduced shrink rate", shrinkRate: 0.004 },
+    5: { description: "Increased speed", baseSpeed: 7 },
+    6: { description: "Improved growth rate", growthRate: 1.6 },
+    7: { description: "Faster ejection", ejectCooldownTime: 200 },
+    8: { description: "Reduced split cooldown", splitCooldown: 9000 },
+    9: { description: "Increased max health", maxHealth: 120 },
+    10: { description: "Master of cells", baseRadius: 25, healthRegenRate: 4, shrinkRate: 0.003 }
+  };
+  
+  // Customization
+  this.skin = 'default';
+  this.skinObject = null; // Will be set by setSkin method
+  this.effects = [];
+  this.nameColor = '#ffffff';
+  this.nameFont = 'Arial';
+  this.cellBorder = true;
+  this.cellBorderColor = 'rgba(0, 0, 0, 0.3)';
+  this.cellBorderWidth = 2;
+  
+  // Team
+  this.team = null;
+  
+  // Initialize cell membranes
+  this.initCellMembranes();
+  
+  // Stats tracking
+  this.stats = {
+    foodEaten: 0,
+    playersEaten: 0,
+    virusesEaten: 0,
+    timesEjected: 0,
+    timesSplit: 0,
+    powerUpsCollected: 0,
+    maxSize: this.radius,
+    maxScore: 0,
+    distanceTraveled: 0,
+    lastX: this.x,
+    lastY: this.y,
+    timePlayed: 0,
+    deathCount: 0,
+    killStreak: 0,
+    maxKillStreak: 0,
+    highestLevel: 1
+  };
+  
+  // Input state
+  this.input = {
+    mouseX: 0,
+    mouseY: 0,
+    keys: {
+      w: false,
+      a: false,
+      s: false,
+      d: false,
+      space: false
+    },
+    touchActive: false,
+    touchX: 0,
+    touchY: 0
+  };
+  
+  // Achievements
+  this.achievements = [];
+  
+  // Notifications
+  this.notifications = [];
+  this.maxNotifications = 5;
+  
+  // Audio feedback
+  this.lastEatSound = 0;
+  this.eatSoundCooldown = 100; // ms between eat sounds
+  
+  // Performance optimization
+  this.lastUpdateTime = Date.now();
+  this.updateInterval = 1000 / 60; // Target 60 FPS
+  this.skipFrames = 0;
+  
+  console.log("Player created:", this.x, this.y, "Target:", this.targetX, this.targetY);
+}
+
+initCellMembranes() {
+  if (!this.cells || this.cells.length === 0) {
+    console.error("No cells to initialize membranes");
+    return;
+  }
+  
+  this.cells.forEach(cell => {
+    if (!cell) {
+      console.error("Invalid cell for membrane initialization");
+      return;
+    }
     
-    // Position and movement - Iniciar no centro do mapa
-    this.x = game.worldSize / 2;
-    this.y = game.worldSize / 2;
+    if (!cell.membrane) {
+      console.error("Cell has no membrane property:", cell);
+      cell.membrane = {
+        points: 20,
+        elasticity: 0.3,
+        distortion: 0.15,
+        oscillation: 0.05,
+        oscillationSpeed: 1.5,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      };
+    }
+    
+    this.initCellMembrane(cell);
+  });
+}
+
+  initCellMembrane(cell) {
+  if (!cell) {
+    console.error("Invalid cell for membrane initialization");
+    return;
+  }
+  
+  if (!cell.membrane) {
+    console.error("Cell has no membrane property for initialization");
+    cell.membrane = {
+      points: 20,
+      elasticity: 0.3,
+      distortion: 0.15,
+      oscillation: 0.05,
+      oscillationSpeed: 1.5,
+      phase: Math.random() * Math.PI * 2,
+      vertices: []
+    };
+  }
+  
+  const { membrane } = cell;
+  membrane.vertices = [];
+  
+  try {
+    for (let i = 0; i < membrane.points; i++) {
+      const angle = (i / membrane.points) * Math.PI * 2;
+      membrane.vertices.push({
+        angle,
+        baseX: Math.cos(angle),
+        baseY: Math.sin(angle),
+        distortionX: 0,
+        distortionY: 0,
+        velocityX: 0,
+        velocityY: 0
+      });
+    }
+  } catch (error) {
+    console.error("Error initializing cell membrane:", error);
+    // Reiniciar a membrana com valores padrão
+    cell.membrane = {
+      points: 20,
+      elasticity: 0.3,
+      distortion: 0.15,
+      oscillation: 0.05,
+      oscillationSpeed: 1.5,
+      phase: Math.random() * Math.PI * 2,
+      vertices: []
+    };
+    
+    // Tentar novamente com a membrana reiniciada
+    for (let i = 0; i < cell.membrane.points; i++) {
+      const angle = (i / cell.membrane.points) * Math.PI * 2;
+      cell.membrane.vertices.push({
+        angle,
+        baseX: Math.cos(angle),
+        baseY: Math.sin(angle),
+        distortionX: 0,
+        distortionY: 0,
+        velocityX: 0,
+        velocityY: 0
+      });
+    }
+  }
+}
+
+update(deltaTime) {
+  // Track time played
+  this.stats.timePlayed += deltaTime;
+  
+  // Skip frames for performance if needed
+  if (this.skipFrames > 0) {
+    this.skipFrames--;
+    return;
+  }
+  
+  // Verificar se as coordenadas são válidas antes de qualquer operação
+  if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
+    console.error("Invalid coordinates detected in update:", this.x, this.y, this.targetX, this.targetY);
+    // Reiniciar coordenadas para valores válidos
+    if (this.game && this.game.worldSize) {
+      this.x = this.game.worldSize / 2;
+      this.y = this.game.worldSize / 2;
+    } else {
+      this.x = 3000; // Valor padrão
+      this.y = 3000; // Valor padrão
+    }
     this.targetX = this.x;
     this.targetY = this.y;
-    this.baseSpeed = 6.5; // Base speed for better player experience
-    this.speed = this.baseSpeed;
-    this.acceleration = 0.2; // How quickly player reaches max speed
-    this.deceleration = 0.3; // How quickly player slows down
-    this.currentVelocityX = 0;
-    this.currentVelocityY = 0;
     
-    // Movement smoothing
-    this.smoothingFactor = 0.2;
-    this.movementHistory = []; // For trail effects
-    this.movementHistoryMaxLength = 10;
-    
-    // Size and growth
-    this.baseRadius = 20;
-    this.radius = this.baseRadius;
-    this.mass = Math.PI * this.radius * this.radius;
-    this.score = 0;
-    
-    // Growth and shrink rates
-    this.growthRate = 1.5;
-    this.shrinkRate = 0.005;
-    this.maxRadius = 500; // Maximum radius a cell can have
-    
-    // Ejection settings
-    this.ejectCooldown = 0;
-    this.ejectCooldownTime = 250;
-    this.ejectSize = 5; // Slightly larger ejected mass
-    this.ejectSpeed = 35; // Increased ejection speed
-    this.ejectDeceleration = 0.97; // Slower deceleration for longer travel
-    this.ejectDistance = 2.5; // Increased ejection distance
-    this.ejectMassAmount = 0.06; // Percentage of mass to eject
-    this.ejectMinMass = 20; // Minimum mass required to eject
-    
-    // Split settings
-    this.splitVelocity = 18; // Split velocity
-    this.splitCooldown = 10000; // 10 seconds cooldown
-    this.splitMinMass = 35; // Minimum mass required to split
-    this.mergeTime = 15000; // Time before cells can merge
-    
-    // State
-    this.isDead = false;
-    
-    // Create initial cell
-    this.cells = [{ 
-      x: this.x, 
-      y: this.y, 
-      radius: this.radius, 
-      mass: this.mass,
+    // Reiniciar células
+    if (this.cells && this.cells.length > 0) {
+      this.cells.forEach(cell => {
+        if (cell) {
+          cell.x = this.x;
+          cell.y = this.y;
+          cell.velocityX = 0;
+          cell.velocityY = 0;
+        }
+      });
+    }
+  }
+  
+  // Verificar se as células são válidas
+  if (!this.cells || this.cells.length === 0) {
+    console.error("No cells available in update");
+    // Criar uma célula padrão
+    this.cells = [{
+      x: this.x,
+      y: this.y,
+      radius: this.baseRadius || 20,
+      mass: Math.PI * (this.baseRadius || 20) * (this.baseRadius || 20),
       velocityX: 0,
       velocityY: 0,
       membrane: {
@@ -76,289 +347,217 @@ export class Player {
       effects: []
     }];
     
-    // Health
-    this.health = 100;
-    this.maxHealth = 100;
-    this.healthRegenRate = 2; // Health points regenerated per second
-    this.damageImmunity = false; // For shield power-up
-    this.damageImmunityTime = 0;
-    
-    // Special abilities
-    this.canSplit = true;
-    this.splitCooldownTime = 0;
-    this.powerUps = {
-      speedBoost: { active: false, duration: 0, factor: 1.5, icon: '⚡' },
-      shield: { active: false, duration: 0, icon: '🛡️' },
-      massBoost: { active: false, duration: 0, factor: 1.2, icon: '⬆️' },
-      invisibility: { active: false, duration: 0, opacity: 0.3, icon: '👁️' },
-      magnet: { active: false, duration: 0, range: 200, icon: '🧲' },
-      freeze: { active: false, duration: 0, icon: '❄️' },
-      doubleScore: { active: false, duration: 0, factor: 2, icon: '💰' }
-    };
-    
-    // Experience and levels
-    this.experience = 0;
-    this.level = 1;
-    this.experienceToNextLevel = 1000;
-    this.levelBonuses = {
-      1: { description: "Starting level" },
-      2: { description: "Increased base size", baseRadius: 22 },
-      3: { description: "Faster regeneration", healthRegenRate: 3 },
-      4: { description: "Reduced shrink rate", shrinkRate: 0.004 },
-      5: { description: "Increased speed", baseSpeed: 7 },
-      6: { description: "Improved growth rate", growthRate: 1.6 },
-      7: { description: "Faster ejection", ejectCooldownTime: 200 },
-      8: { description: "Reduced split cooldown", splitCooldown: 9000 },
-      9: { description: "Increased max health", maxHealth: 120 },
-      10: { description: "Master of cells", baseRadius: 25, healthRegenRate: 4, shrinkRate: 0.003 }
-    };
-    
-    // Customization
-    this.skin = 'default';
-    this.skinObject = null; // Will be set by setSkin method
-    this.effects = [];
-    this.nameColor = '#ffffff';
-    this.nameFont = 'Arial';
-    this.cellBorder = true;
-    this.cellBorderColor = 'rgba(0, 0, 0, 0.3)';
-    this.cellBorderWidth = 2;
-    
-    // Team
-    this.team = null;
-    
-    // Initialize cell membranes
-    this.initCellMembranes();
-    
-    // Stats tracking
-    this.stats = {
-      foodEaten: 0,
-      playersEaten: 0,
-      virusesEaten: 0,
-      timesEjected: 0,
-      timesSplit: 0,
-      powerUpsCollected: 0,
-      maxSize: this.radius,
-      maxScore: 0,
-      distanceTraveled: 0,
-      lastX: this.x,
-      lastY: this.y,
-      timePlayed: 0,
-      deathCount: 0,
-      killStreak: 0,
-      maxKillStreak: 0,
-      highestLevel: 1
-    };
-    
-    // Input state
-    this.input = {
-      mouseX: 0,
-      mouseY: 0,
-      keys: {
-        w: false,
-        a: false,
-        s: false,
-        d: false,
-        space: false
-      },
-      touchActive: false,
-      touchX: 0,
-      touchY: 0
-    };
-    
-    // Achievements
-    this.achievements = [];
-    
-    // Notifications
-    this.notifications = [];
-    this.maxNotifications = 5;
-    
-    // Audio feedback
-    this.lastEatSound = 0;
-    this.eatSoundCooldown = 100; // ms between eat sounds
-    
-    // Performance optimization
-    this.lastUpdateTime = Date.now();
-    this.updateInterval = 1000 / 60; // Target 60 FPS
-    this.skipFrames = 0;
-    
-    console.log("Player created:", this.x, this.y, "Target:", this.targetX, this.targetY);
-  }
-
-  initCellMembranes() {
-    if (!this.cells || this.cells.length === 0) {
-      console.error("No cells to initialize membranes");
-      return;
+    // Inicializar a membrana da célula
+    if (typeof this.initCellMembranes === 'function') {
+      this.initCellMembranes();
     }
+  }
+  
+  // Verificar cada célula individualmente
+  this.cells = this.cells.filter(cell => {
+    if (!cell || isNaN(cell.x) || isNaN(cell.y) || isNaN(cell.radius) || isNaN(cell.mass)) {
+      console.error("Invalid cell detected, removing:", cell);
+      return false;
+    }
+    return true;
+  });
+  
+  // Se todas as células foram removidas, criar uma nova
+  if (this.cells.length === 0) {
+    console.error("All cells were invalid, creating a new one");
+    this.cells.push({
+      x: this.x,
+      y: this.y,
+      radius: this.baseRadius || 20,
+      mass: Math.PI * (this.baseRadius || 20) * (this.baseRadius || 20),
+      velocityX: 0,
+      velocityY: 0,
+      membrane: {
+        points: 20,
+        elasticity: 0.3,
+        distortion: 0.15,
+        oscillation: 0.05,
+        oscillationSpeed: 1.5,
+        phase: Math.random() * Math.PI * 2,
+        vertices: []
+      },
+      z: 0,
+      id: 'cell-' + Date.now() + '-0',
+      effects: []
+    });
     
+    // Inicializar a membrana da célula
+    if (typeof this.initCellMembranes === 'function') {
+      this.initCellMembranes();
+    }
+  }
+  
+  // Move towards target
+  this.moveTowardsTarget(deltaTime);
+  
+  // Check collisions
+  this.checkCollisions();
+  
+  // Update cells
+  this.updateCells(deltaTime);
+  
+  // Update cell membranes
+  this.updateCellMembranes(deltaTime);
+  
+  // Update power-ups
+  this.updatePowerUps(deltaTime);
+  
+  // Update score
+  this.updateScore();
+  
+  // Update max score and size stats
+  if (this.score > this.stats.maxScore) {
+    this.stats.maxScore = this.score;
+  }
+  
+  const largestCell = this.cells.reduce((largest, cell) => 
+    cell.radius > largest.radius ? cell : largest, this.cells[0]);
+  if (largestCell.radius > this.stats.maxSize) {
+    this.stats.maxSize = largestCell.radius;
+  }
+  
+  // Update distance traveled
+  const dx = this.x - this.stats.lastX;
+  const dy = this.y - this.stats.lastY;
+  const distanceMoved = Math.sqrt(dx * dx + dy * dy);
+  this.stats.distanceTraveled += distanceMoved;
+  this.stats.lastX = this.x;
+  this.stats.lastY = this.y;
+  
+  // Update movement history for trail effects
+  if (distanceMoved > 0.1) {
+    this.movementHistory.push({ x: this.x, y: this.y, time: Date.now() });
+    if (this.movementHistory.length > this.movementHistoryMaxLength) {
+      this.movementHistory.shift();
+    }
+  }
+  
+  // Update speed based on size
+  this.updateSpeedBasedOnSize();
+  
+  // Regenerate health
+  this.regenerateHealth(deltaTime);
+  
+  // Check for level up
+  this.checkLevelUp();
+  
+  // Apply magnet power-up
+  if (this.powerUps.magnet.active) {
+    this.applyMagnetEffect();
+  }
+  
+  // Apply freeze power-up
+  if (this.powerUps.freeze.active) {
+    this.applyFreezeEffect();
+  }
+  
+  // Update eject cooldown
+  if (this.ejectCooldown > 0) {
+    this.ejectCooldown -= deltaTime * 1000;
+  }
+  
+  // Update notifications
+  this.updateNotifications(deltaTime);
+  
+  // Create trail effect if moving fast
+  if (this.powerUps.speedBoost.active && this.game.particles) {
     this.cells.forEach(cell => {
-      if (!cell || !cell.membrane) {
-        console.error("Invalid cell or membrane:", cell);
-        return;
-      }
-      
-      this.initCellMembrane(cell);
+      this.game.particles.createTrailEffect(cell, {
+        color: this.color,
+        size: cell.radius * 0.2,
+        interval: 0.05,
+        life: 0.3,
+        fadeOut: true,
+        shrink: 2
+      });
     });
   }
+  
+  // Update effects
+  this.updateEffects(deltaTime);
+  
+  // Update damage immunity
+  if (this.damageImmunity && Date.now() > this.damageImmunityTime) {
+    this.damageImmunity = false;
+  }
+}
 
-  initCellMembrane(cell) {
+updateCellMembranes(deltaTime) {
+  if (!this.cells || this.cells.length === 0) {
+    return;
+  }
+  
+  const time = Date.now() / 1000;
+  
+  this.cells.forEach(cell => {
     if (!cell || !cell.membrane) {
-      console.error("Invalid cell or membrane for initialization:", cell);
       return;
     }
     
     const { membrane } = cell;
-    membrane.vertices = [];
     
-    for (let i = 0; i < membrane.points; i++) {
-      const angle = (i / membrane.points) * Math.PI * 2;
-      membrane.vertices.push({
-        angle,
-        baseX: Math.cos(angle),
-        baseY: Math.sin(angle),
-        distortionX: 0,
-        distortionY: 0,
-        velocityX: 0,
-        velocityY: 0
-      });
+    // Verificar se a fase é válida
+    if (isNaN(membrane.phase)) {
+      membrane.phase = 0;
     }
-  }
-
-  update(deltaTime) {
-    // Track time played
-    this.stats.timePlayed += deltaTime;
     
-    // Skip frames for performance if needed
-    if (this.skipFrames > 0) {
-      this.skipFrames--;
+    membrane.phase += (membrane.oscillationSpeed || 1.5) * deltaTime;
+    
+    // Verificar se os vértices existem
+    if (!membrane.vertices || !Array.isArray(membrane.vertices)) {
+      console.error("Invalid membrane vertices:", membrane.vertices);
+      this.initCellMembrane(cell);
       return;
     }
     
-    // Move towards target
-    this.moveTowardsTarget(deltaTime);
-    
-    // Check collisions
-    this.checkCollisions();
-    
-    // Update cells
-    this.updateCells(deltaTime);
-    
-    // Update cell membranes
-    this.updateCellMembranes(deltaTime);
-    
-    // Update power-ups
-    this.updatePowerUps(deltaTime);
-    
-    // Update score
-    this.updateScore();
-    
-    // Update max score and size stats
-    if (this.score > this.stats.maxScore) {
-      this.stats.maxScore = this.score;
-    }
-    
-    const largestCell = this.cells.reduce((largest, cell) => 
-      cell.radius > largest.radius ? cell : largest, this.cells[0]);
-    if (largestCell.radius > this.stats.maxSize) {
-      this.stats.maxSize = largestCell.radius;
-    }
-    
-    // Update distance traveled
-    const dx = this.x - this.stats.lastX;
-    const dy = this.y - this.stats.lastY;
-    const distanceMoved = Math.sqrt(dx * dx + dy * dy);
-    this.stats.distanceTraveled += distanceMoved;
-    this.stats.lastX = this.x;
-    this.stats.lastY = this.y;
-    
-    // Update movement history for trail effects
-    if (distanceMoved > 0.1) {
-      this.movementHistory.push({ x: this.x, y: this.y, time: Date.now() });
-      if (this.movementHistory.length > this.movementHistoryMaxLength) {
-        this.movementHistory.shift();
-      }
-    }
-    
-    // Update speed based on size
-    this.updateSpeedBasedOnSize();
-    
-    // Regenerate health
-    this.regenerateHealth(deltaTime);
-    
-    // Check for level up
-    this.checkLevelUp();
-    
-    // Apply magnet power-up
-    if (this.powerUps.magnet.active) {
-      this.applyMagnetEffect();
-    }
-    
-    // Apply freeze power-up
-    if (this.powerUps.freeze.active) {
-      this.applyFreezeEffect();
-    }
-    
-    // Update eject cooldown
-    if (this.ejectCooldown > 0) {
-      this.ejectCooldown -= deltaTime * 1000;
-    }
-    
-    // Update notifications
-    this.updateNotifications(deltaTime);
-    
-    // Create trail effect if moving fast
-    if (this.powerUps.speedBoost.active && this.game.particles) {
-      this.cells.forEach(cell => {
-        this.game.particles.createTrailEffect(cell, {
-          color: this.color,
-          size: cell.radius * 0.2,
-          interval: 0.05,
-          life: 0.3,
-          fadeOut: true,
-          shrink: 2
-        });
-      });
-    }
-    
-    // Update effects
-    this.updateEffects(deltaTime);
-    
-    // Update damage immunity
-    if (this.damageImmunity && Date.now() > this.damageImmunityTime) {
-      this.damageImmunity = false;
-    }
-  }
-
-  updateCellMembranes(deltaTime) {
-    const time = Date.now() / 1000;
-    
-    this.cells.forEach(cell => {
-      const { membrane } = cell;
-      membrane.phase += membrane.oscillationSpeed * deltaTime;
+    membrane.vertices.forEach(vertex => {
+      if (!vertex) return;
       
-      membrane.vertices.forEach(vertex => {
-        const oscillation = membrane.oscillation * Math.sin(vertex.angle * 3 + membrane.phase);
+      // Verificar se os valores são válidos
+      if (isNaN(vertex.angle) || isNaN(vertex.baseX) || isNaN(vertex.baseY) || 
+          isNaN(vertex.distortionX) || isNaN(vertex.distortionY) || 
+          isNaN(vertex.velocityX) || isNaN(vertex.velocityY)) {
         
-        vertex.velocityX += -vertex.distortionX * membrane.elasticity;
-        vertex.velocityY += -vertex.distortionY * membrane.elasticity;
-        
-        vertex.velocityX *= 0.9;
-        vertex.velocityY *= 0.9;
-        
-        vertex.distortionX += vertex.velocityX * deltaTime * 5;
-        vertex.distortionY += vertex.velocityY * deltaTime * 5;
-        
-        const distortionLength = Math.sqrt(vertex.distortionX * vertex.distortionX + vertex.distortionY * vertex.distortionY);
-        if (distortionLength > membrane.distortion) {
-          const scale = membrane.distortion / distortionLength;
-          vertex.distortionX *= scale;
-          vertex.distortionY *= scale;
-        }
-        
-        vertex.distortionX += vertex.baseX * oscillation;
-        vertex.distortionY += vertex.baseY * oscillation;
-      });
+        // Reiniciar o vértice com valores padrão
+        const angle = Math.random() * Math.PI * 2;
+        vertex.angle = angle;
+        vertex.baseX = Math.cos(angle);
+        vertex.baseY = Math.sin(angle);
+        vertex.distortionX = 0;
+        vertex.distortionY = 0;
+        vertex.velocityX = 0;
+        vertex.velocityY = 0;
+        return;
+      }
+      
+      const oscillation = (membrane.oscillation || 0.05) * Math.sin(vertex.angle * 3 + membrane.phase);
+      
+      vertex.velocityX += -vertex.distortionX * (membrane.elasticity || 0.3);
+      vertex.velocityY += -vertex.distortionY * (membrane.elasticity || 0.3);
+      
+      vertex.velocityX *= 0.9;
+      vertex.velocityY *= 0.9;
+      
+      vertex.distortionX += vertex.velocityX * deltaTime * 5;
+      vertex.distortionY += vertex.velocityY * deltaTime * 5;
+      
+      const distortionLength = Math.sqrt(vertex.distortionX * vertex.distortionX + vertex.distortionY * vertex.distortionY);
+      if (distortionLength > (membrane.distortion || 0.15)) {
+        const scale = (membrane.distortion || 0.15) / distortionLength;
+        vertex.distortionX *= scale;
+        vertex.distortionY *= scale;
+      }
+      
+      vertex.distortionX += vertex.baseX * oscillation;
+      vertex.distortionY += vertex.baseY * oscillation;
     });
-  }
+  });
+}
 
   distortMembrane(cell, dirX, dirY, amount) {
     const { membrane } = cell;
@@ -403,18 +602,25 @@ moveTowardsTarget(deltaTime) {
   if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
     console.error("Invalid coordinates detected:", this.x, this.y, this.targetX, this.targetY);
     // Reiniciar coordenadas para valores válidos
-    this.x = this.game.worldSize / 2;
-    this.y = this.game.worldSize / 2;
+    if (this.game && this.game.worldSize) {
+      this.x = this.game.worldSize / 2;
+      this.y = this.game.worldSize / 2;
+    } else {
+      this.x = 3000; // Valor padrão
+      this.y = 3000; // Valor padrão
+    }
     this.targetX = this.x;
     this.targetY = this.y;
     
     // Reiniciar células
-    this.cells.forEach(cell => {
-      cell.x = this.x;
-      cell.y = this.y;
-      cell.velocityX = 0;
-      cell.velocityY = 0;
-    });
+    if (this.cells && this.cells.length > 0) {
+      this.cells.forEach(cell => {
+        cell.x = this.x;
+        cell.y = this.y;
+        cell.velocityX = 0;
+        cell.velocityY = 0;
+      });
+    }
     
     return;
   }
@@ -528,8 +734,14 @@ moveTowardsTarget(deltaTime) {
       cell.y = newY;
       
       // Keep within world bounds
-      cell.x = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.x));
-      cell.y = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.y));
+      if (this.game && this.game.worldSize) {
+        cell.x = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.x));
+        cell.y = Math.max(cell.radius, Math.min(this.game.worldSize - cell.radius, cell.y));
+      } else {
+        // Usar valores padrão se worldSize não estiver disponível
+        cell.x = Math.max(cell.radius, Math.min(6000 - cell.radius, cell.x));
+        cell.y = Math.max(cell.radius, Math.min(6000 - cell.radius, cell.y));
+      }
     } else {
       // Decelerate when close to target
       if (cell.velocityX) cell.velocityX *= (1 - this.deceleration);
@@ -551,7 +763,7 @@ updateCenterOfMass() {
   let totalMass = 0;
   
   // Verificar se há células
-  if (this.cells.length === 0) {
+  if (!this.cells || this.cells.length === 0) {
     console.error("No cells to calculate center of mass");
     return;
   }
@@ -585,9 +797,12 @@ updateCenterOfMass() {
     if (this.cells.length > 0) {
       this.x = this.cells[0].x;
       this.y = this.cells[0].y;
-    } else {
+    } else if (this.game && this.game.worldSize) {
       this.x = this.game.worldSize / 2;
       this.y = this.game.worldSize / 2;
+    } else {
+      this.x = 3000; // Valor padrão
+      this.y = 3000; // Valor padrão
     }
   }
 }

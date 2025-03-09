@@ -355,7 +355,18 @@ export class Game {
   }
   
 setPlayer(player) {
+  if (!player) {
+    console.error("Cannot set null player");
+    return;
+  }
+  
   this.player = player;
+  
+  // Verificar se worldSize está definido
+  if (!this.worldSize) {
+    console.error("worldSize is undefined in setPlayer. Using default value.");
+    this.worldSize = 6000; // Valor padrão
+  }
   
   // Ensure player's initial position is valid and centered in the world
   player.x = this.worldSize / 2; // Start at center of map
@@ -364,7 +375,7 @@ setPlayer(player) {
   player.targetY = player.y;
   
   // Initialize player's cells with correct position
-  if (player.cells.length > 0) {
+  if (player.cells && player.cells.length > 0) {
     // Update all cells with the correct position
     player.cells.forEach(cell => {
       cell.x = player.x;
@@ -382,6 +393,8 @@ setPlayer(player) {
     });
   } else {
     // Create a cell if none exists
+    if (!player.cells) player.cells = [];
+    
     player.cells.push({
       x: player.x,
       y: player.y,
@@ -404,7 +417,9 @@ setPlayer(player) {
     });
     
     // Initialize the cell membrane
-    player.initCellMembranes();
+    if (typeof player.initCellMembranes === 'function') {
+      player.initCellMembranes();
+    }
   }
   
   // Center camera on player
@@ -427,13 +442,15 @@ setPlayer(player) {
   player.shrinkRate = this.balanceSettings.playerShrinkRate;
   
   // Initialize player achievements
-  this.achievements.initPlayer(player);
+  if (this.achievements) {
+    this.achievements.initPlayer(player);
+  }
   
   // Log player position for debugging
   console.log("Player set in game:", player.x, player.y, "Target:", player.targetX, player.targetY);
   
   // Verify cell coordinates
-  if (player.cells.length > 0) {
+  if (player.cells && player.cells.length > 0) {
     console.log("Cell coordinates:", player.cells[0].x, player.cells[0].y);
   }
 }
@@ -571,37 +588,38 @@ setPlayer(player) {
     return colors[Math.floor(Math.random() * colors.length)];
   }
   
-  gameLoop(timestamp) {
-    // Calculate delta time
-    if (!timestamp) timestamp = performance.now();
-    const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
-    this.lastFrameTime = timestamp;
+gameLoop(timestamp) {
+  // Calculate delta time
+  if (!timestamp) timestamp = performance.now();
+  const deltaTime = (timestamp - this.lastFrameTime) / 1000; // Convert to seconds
+  this.lastFrameTime = timestamp;
+  
+  // Cap delta time to prevent large jumps
+  const cappedDeltaTime = Math.min(deltaTime, 0.1);
+  
+  // Update game time
+  this.gameTime += cappedDeltaTime;
+  
+  // Update FPS counter
+  this.frameCount++;
+  if (timestamp - this.fpsUpdateTime > 1000) {
+    this.fps = this.frameCount;
+    this.frameCount = 0;
+    this.fpsUpdateTime = timestamp;
     
-    // Cap delta time to prevent large jumps
-    const cappedDeltaTime = Math.min(deltaTime, 0.1);
-    
-    // Update game time
-    this.gameTime += cappedDeltaTime;
-    
-    // Update FPS counter
-    this.frameCount++;
-    if (timestamp - this.fpsUpdateTime > 1000) {
-      this.fps = this.frameCount;
-      this.frameCount = 0;
-      this.fpsUpdateTime = timestamp;
-      
-      // Debug log
-      if (this.debugMode) {
-        console.log("FPS:", this.fps, "Player position:", this.player?.x, this.player?.y);
-      }
+    // Debug log
+    if (this.debugMode) {
+      console.log("FPS:", this.fps, "Player position:", this.player?.x, this.player?.y);
     }
-    
-    // Skip update if paused
-    if (this.isPaused) {
-      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
-      return;
-    }
-    
+  }
+  
+  // Skip update if paused
+  if (this.isPaused) {
+    this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
+    return;
+  }
+  
+  try {
     // Fixed time step for physics
     this.accumulator += cappedDeltaTime;
     while (this.accumulator >= 1 / this.targetFPS) {
@@ -618,86 +636,99 @@ setPlayer(player) {
     if (!this.isGameOver) {
       this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
     }
-  }
-  
-  update(deltaTime) {
-		  if (isNaN(this.x) || isNaN(this.y) || isNaN(this.targetX) || isNaN(this.targetY)) {
-    console.error("Invalid player coordinates detected in update:", this.x, this.y, this.targetX, this.targetY);
-    // Reiniciar coordenadas para valores válidos
-    this.x = this.game.worldSize / 2;
-    this.y = this.game.worldSize / 2;
-    this.targetX = this.x;
-    this.targetY = this.y;
+  } catch (error) {
+    console.error("Error in game loop:", error);
     
-    // Reiniciar células
-    this.cells.forEach(cell => {
-      cell.x = this.x;
-      cell.y = this.y;
-      cell.velocityX = 0;
-      cell.velocityY = 0;
-    });
-  }
-  
-  // Track time played
-  this.stats.timePlayed += deltaTime;
-  
-  // Skip frames for performance if needed
-  if (this.skipFrames > 0) {
-    this.skipFrames--;
-    return;
-  }
-  
-  // Move towards target
-  this.moveTowardsTarget(deltaTime);
-    // Scale delta time by time scale (for slow-motion effects)
-    const scaledDeltaTime = deltaTime * this.timeScale;
+    // Try to recover from error
+    this.accumulator = 0;
     
-    // Performance measurement
-    const updateStart = performance.now();
-    
-    // Update battle royale mode
-    if (this.gameMode === 'battle-royale') {
-      this.updateBattleRoyale(scaledDeltaTime);
-    }
-    
-    // Update team scores
-    if (this.gameMode === 'teams') {
-      this.updateTeamScores();
-    }
-    
-    // Update spatial grid
-    this.updateSpatialGrid();
-    
-    // Update player
-    if (this.player && !this.player.isDead) {
-      const playerUpdateStart = performance.now();
-      this.player.update(scaledDeltaTime);
-      this.centerCamera();
+    // Reset player position if it's the source of the error
+    if (this.player && (isNaN(this.player.x) || isNaN(this.player.y))) {
+      console.error("Resetting player position due to error");
+      this.player.x = this.worldSize / 2;
+      this.player.y = this.worldSize / 2;
+      this.player.targetX = this.player.x;
+      this.player.targetY = this.player.y;
       
-      // Check if player is out of bounds
-      this.keepEntityInBounds(this.player);
-      
-      // Apply battle royale damage if outside safe zone
-      if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
-        const dx = this.player.x - this.battleRoyaleState.safeZoneX;
-        const dy = this.player.y - this.battleRoyaleState.safeZoneY;
-        const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
-        
-        if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
-          this.player.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
-        }
+      // Reset player cells
+      if (this.player.cells && this.player.cells.length > 0) {
+        this.player.cells.forEach(cell => {
+          if (cell) {
+            cell.x = this.player.x;
+            cell.y = this.player.y;
+            cell.velocityX = 0;
+            cell.velocityY = 0;
+          }
+        });
       }
-      
-      // Check achievements
-      this.achievements.checkAchievements(this.player);
-      
-      this.stats.playerUpdateTime = performance.now() - playerUpdateStart;
-    } else if (this.player && this.player.isDead) {
-      this.handleGameOver();
     }
     
-    // Update AI players
-    const aiUpdateStart = performance.now();
+    // Continue game loop
+    if (!this.isGameOver) {
+      this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
+    }
+  }
+}
+  
+update(deltaTime) {
+  // Scale delta time by time scale (for slow-motion effects)
+  const scaledDeltaTime = deltaTime * this.timeScale;
+  
+  // Performance measurement
+  const updateStart = performance.now();
+  
+  // Verificar se o jogo está inicializado corretamente
+  if (!this.worldSize) {
+    console.error("worldSize is undefined. Initializing with default value.");
+    this.worldSize = 6000; // Valor padrão
+  }
+  
+  // Update battle royale mode
+  if (this.gameMode === 'battle-royale') {
+    this.updateBattleRoyale(scaledDeltaTime);
+  }
+  
+  // Update team scores
+  if (this.gameMode === 'teams') {
+    this.updateTeamScores();
+  }
+  
+  // Update spatial grid
+  this.updateSpatialGrid();
+  
+  // Update player
+  if (this.player && !this.player.isDead) {
+    const playerUpdateStart = performance.now();
+    this.player.update(scaledDeltaTime);
+    this.centerCamera();
+    
+    // Check if player is out of bounds
+    this.keepEntityInBounds(this.player);
+    
+    // Apply battle royale damage if outside safe zone
+    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
+      const dx = this.player.x - this.battleRoyaleState.safeZoneX;
+      const dy = this.player.y - this.battleRoyaleState.safeZoneY;
+      const distanceToCenter = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distanceToCenter > this.battleRoyaleState.safeZoneRadius) {
+        this.player.takeDamage(this.battleRoyaleState.damagePerSecond * scaledDeltaTime);
+      }
+    }
+    
+    // Check achievements
+    if (this.achievements) {
+      this.achievements.checkAchievements(this.player);
+    }
+    
+    this.stats.playerUpdateTime = performance.now() - playerUpdateStart;
+  } else if (this.player && this.player.isDead) {
+    this.handleGameOver();
+  }
+  
+  // Update AI players
+  const aiUpdateStart = performance.now();
+  if (this.ais && this.ais.length > 0) {
     this.ais.forEach(ai => {
       if (!ai.isDead) {
         ai.update(scaledDeltaTime);
@@ -720,68 +751,85 @@ setPlayer(player) {
         this.removalQueues.ais.push(ai);
       }
     });
-    this.stats.aiTime = performance.now() - aiUpdateStart;
-    
-    // Update food
+  }
+  this.stats.aiTime = performance.now() - aiUpdateStart;
+  
+  // Update food
+  if (this.foods && this.foods.length > 0) {
     this.foods.forEach(food => {
       food.update(scaledDeltaTime);
     });
-    
-    // Update viruses
+  }
+  
+  // Update viruses
+  if (this.viruses && this.viruses.length > 0) {
     this.viruses.forEach(virus => {
       virus.update(scaledDeltaTime);
     });
-    
-    // Update power-ups
+  }
+  
+  // Update power-ups
+  if (this.powerUps && this.powerUps.length > 0) {
     this.powerUps.forEach(powerUp => {
       powerUp.update(scaledDeltaTime);
     });
-    
-    // Update particles
-    this.particles.update(scaledDeltaTime);
-    
-    // Only add new AIs in classic mode or if battle royale hasn't started yet
-    if (this.gameMode === 'classic' || 
-        (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active)) {
-      this.replenishAIs();
-    }
-    
-    // Replenish food in batches for better performance
-    this.replenishFood();
-    
-    // Replenish viruses
-    this.replenishViruses();
-    
-    // Replenish power-ups
-    this.replenishPowerUps();
-    
-    // Check for battle royale start
-    if (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active && this.gameTime > 30) {
-      this.startBattleRoyale();
-    }
-    
-    // Update visible entities for rendering optimization
-    this.updateVisibleEntities();
-    
-    // Update performance stats
-    this.stats.updateTime = performance.now() - updateStart;
   }
   
-  keepEntityInBounds(entity) {
-    if (!entity) return;
-    
-    // Keep entity position within world bounds
-    entity.x = Math.max(0, Math.min(this.worldSize, entity.x));
-    entity.y = Math.max(0, Math.min(this.worldSize, entity.y));
-    
-    // Also keep all cells within bounds
-    if (entity.cells) {
-      entity.cells.forEach(cell => {
-        cell.x = Math.max(cell.radius, Math.min(this.worldSize - cell.radius, cell.x));
-        cell.y = Math.max(cell.radius, Math.min(this.worldSize - cell.radius, cell.y));
-      });
-    }
+  // Update particles
+  if (this.particles) {
+    this.particles.update(scaledDeltaTime);
   }
+  
+  // Only add new AIs in classic mode or if battle royale hasn't started yet
+  if (this.gameMode === 'classic' || 
+      (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active)) {
+    this.replenishAIs();
+  }
+  
+  // Replenish food in batches for better performance
+  this.replenishFood();
+  
+  // Replenish viruses
+  this.replenishViruses();
+  
+  // Replenish power-ups
+  this.replenishPowerUps();
+  
+  // Check for battle royale start
+  if (this.gameMode === 'battle-royale' && !this.battleRoyaleState.active && this.gameTime > 30) {
+    this.startBattleRoyale();
+  }
+  
+  // Update visible entities for rendering optimization
+  this.updateVisibleEntities();
+  
+  // Update performance stats
+  this.stats.updateTime = performance.now() - updateStart;
+}
+  
+keepEntityInBounds(entity) {
+  if (!entity) return;
+  
+  // Verificar se worldSize está definido
+  if (!this.worldSize) {
+    console.error("worldSize is undefined in keepEntityInBounds. Using default value.");
+    this.worldSize = 6000; // Valor padrão
+  }
+  
+  // Keep entity position within world bounds
+  entity.x = Math.max(0, Math.min(this.worldSize, entity.x));
+  entity.y = Math.max(0, Math.min(this.worldSize, entity.y));
+  
+  // Also keep all cells within bounds
+  if (entity.cells) {
+    entity.cells.forEach(cell => {
+      if (!cell || !cell.radius) return;
+      
+      cell.x = Math.max(cell.radius, Math.min(this.worldSize - cell.radius, cell.x));
+      cell.y = Math.max(cell.radius, Math.min(this.worldSize - cell.radius, cell.y));
+    });
+  }
+}
   
   replenishAIs() {
     const aiSpawnRate = this.balanceSettings.aiSpawnRate;

@@ -6,6 +6,12 @@ export function setupControls(game, player) {
   
   console.log("Setting up controls for player", player.name);
   
+  // Verificar se o canvas existe
+  if (!game.canvas) {
+    console.error("Game canvas is missing");
+    return;
+  }
+  
   // Mouse movement
   game.canvas.addEventListener('mousemove', (e) => {
     if (game.isGameOver || game.isPaused) return;
@@ -18,6 +24,12 @@ export function setupControls(game, player) {
     // Verify mouse coordinates are valid
     if (isNaN(mouseX) || isNaN(mouseY)) {
       console.error("Invalid mouse coordinates:", mouseX, mouseY);
+      return;
+    }
+    
+    // Verificar se a câmera está definida
+    if (!game.camera || isNaN(game.camera.x) || isNaN(game.camera.y) || isNaN(game.camera.scale)) {
+      console.error("Invalid camera:", game.camera);
       return;
     }
     
@@ -45,6 +57,50 @@ export function setupControls(game, player) {
     player.targetX = worldX;
     player.targetY = worldY;
   });
+  
+  // Touch movement for mobile
+  game.canvas.addEventListener('touchmove', (e) => {
+    if (game.isGameOver || game.isPaused) return;
+    e.preventDefault();
+    
+    // Get touch position relative to canvas
+    const rect = game.canvas.getBoundingClientRect();
+    const touchX = e.touches[0].clientX - rect.left;
+    const touchY = e.touches[0].clientY - rect.top;
+    
+    // Verify touch coordinates are valid
+    if (isNaN(touchX) || isNaN(touchY)) {
+      console.error("Invalid touch coordinates:", touchX, touchY);
+      return;
+    }
+    
+    // Verificar se a câmera está definida
+    if (!game.camera || isNaN(game.camera.x) || isNaN(game.camera.y) || isNaN(game.camera.scale)) {
+      console.error("Invalid camera for touch:", game.camera);
+      return;
+    }
+    
+    // Convert to world coordinates
+    const worldX = game.camera.x + (touchX - game.width / 2) / game.camera.scale;
+    const worldY = game.camera.y + (touchY - game.height / 2) / game.camera.scale;
+    
+    // Verify world coordinates are valid
+    if (isNaN(worldX) || isNaN(worldY)) {
+      console.error("Invalid world coordinates from touch:", worldX, worldY);
+      return;
+    }
+    
+    // Update player input
+    player.updateInput({
+      touchActive: true,
+      touchX: touchX,
+      touchY: touchY
+    });
+    
+    // Set player target directly
+    player.targetX = worldX;
+    player.targetY = worldY;
+  }, { passive: false });
   
   // Touch movement for mobile
   game.canvas.addEventListener('touchmove', (e) => {
