@@ -8,6 +8,13 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="./assets/favicon.png">
+  <meta name="description" content="Cytosis.io - A cell survival game where you evolve, consume, and dominate the microscopic world. Play now for free!">
+  <meta property="og:title" content="Cytosis.io - Cell Survival Evolution">
+  <meta property="og:description" content="Enter the microscopic world where only the strongest cells survive. Consume, grow, and evolve!">
+  <meta property="og:image" content="./assets/og-image.jpg">
+  <meta property="og:url" content="https://cytosis.io">
+  <meta name="twitter:card" content="summary_large_image">
 </head>
 <body>
   <div id="game-container">
@@ -19,6 +26,12 @@
       
       <div class="game-description">
         <p>Enter the microscopic world where only the strongest cells survive. Consume, grow, and evolve!</p>
+      </div>
+      
+      <div id="player-stats">
+        <div class="stat">High Score: 0</div>
+        <div class="stat">Games Played: 0</div>
+        <div class="stat">Highest Level: 1</div>
       </div>
       
       <div class="settings-container">
@@ -36,6 +49,13 @@
               <div class="color-option" style="background-color: #00bcd4;" data-color="#00bcd4"></div>
               <div class="color-option" style="background-color: #ffeb3b;" data-color="#ffeb3b"></div>
               <div class="color-option" style="background-color: #e91e63;" data-color="#e91e63"></div>
+            </div>
+          </div>
+          
+          <div class="skin-container">
+            <h3>Choose Skin</h3>
+            <div id="skin-selector" class="skin-options">
+              <!-- Skins will be populated by JavaScript -->
             </div>
           </div>
         </div>
@@ -173,7 +193,71 @@
       </div>
     </div>
     
+    <div id="tutorial-container">
+      <!-- Tutorial steps will be added by JavaScript -->
+    </div>
+    
+    <div id="game-announcement"></div>
+    
+    <div id="loading-screen">
+      <div class="loading-logo">Cytosis<span class="io-text">.io</span></div>
+      <div class="loading-bar-container">
+        <div class="loading-bar-fill"></div>
+      </div>
+      <div class="loading-text">Loading game assets...</div>
+    </div>
+    
+    <div id="mobile-controls" style="display: none;">
+      <button class="mobile-button split-button">Split</button>
+      <button class="mobile-button eject-button">Eject</button>
+    </div>
+    
+    <div class="joystick-container" style="display: none;">
+      <div class="joystick-knob"></div>
+    </div>
+    
     <canvas id="game-canvas"></canvas>
+  </div>
+  
+  <div id="help-overlay" class="help-overlay" style="display: none;">
+    <div class="help-content">
+      <h2>Controls</h2>
+      <div class="controls-list">
+        <div class="control-item">
+          <div class="key">Mouse</div>
+          <div class="action">Move your cell</div>
+        </div>
+        <div class="control-item">
+          <div class="key">Space</div>
+          <div class="action">Split cell</div>
+        </div>
+        <div class="control-item">
+          <div class="key">W</div>
+          <div class="action">Eject mass</div>
+        </div>
+        <div class="control-item">
+          <div class="key">P / Esc</div>
+          <div class="action">Pause game</div>
+        </div>
+        <div class="control-item">
+          <div class="key">F</div>
+          <div class="action">Toggle fullscreen</div>
+        </div>
+        <div class="control-item">
+          <div class="key">M</div>
+          <div class="action">Toggle sound</div>
+        </div>
+        <div class="control-item">
+          <div class="key">Tab</div>
+          <div class="action">Show leaderboard</div>
+        </div>
+        <div class="control-item">
+          <div class="key">H</div>
+          <div class="action">Toggle help</div>
+        </div>
+      </div>
+      <button id="close-help">Close</button>
+    </div>
   </div>
   
   <script type="module" src="./src/main.js"></script>

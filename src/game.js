@@ -1,3 +1,4 @@
+
 import { Food } from './food.js';
 import { AI } from './ai.js';
 import { Virus } from './virus.js';
@@ -213,6 +214,39 @@ export class Game {
     
     // Event listeners
     this.setupEventListeners();
+  }
+  
+  createBackgroundPattern() {
+    // Create an off-screen canvas for the pattern
+    const patternCanvas = document.createElement('canvas');
+    const patternContext = patternCanvas.getContext('2d');
+    
+    // Set pattern size
+    patternCanvas.width = this.gridSize * 2;
+    patternCanvas.height = this.gridSize * 2;
+    
+    // Draw pattern
+    patternContext.fillStyle = '#f8f8f8';
+    patternContext.fillRect(0, 0, patternCanvas.width, patternCanvas.height);
+    
+    // Draw grid lines
+    patternContext.strokeStyle = '#e0e0e0';
+    patternContext.lineWidth = 1;
+    
+    // Vertical lines
+    patternContext.beginPath();
+    patternContext.moveTo(this.gridSize, 0);
+    patternContext.lineTo(this.gridSize, patternCanvas.height);
+    patternContext.stroke();
+    
+    // Horizontal lines
+    patternContext.beginPath();
+    patternContext.moveTo(0, this.gridSize);
+    patternContext.lineTo(patternCanvas.width, this.gridSize);
+    patternContext.stroke();
+    
+    // Create pattern from canvas
+    return this.ctx.createPattern(patternCanvas, 'repeat');
   }
   
   setupEventListeners() {
@@ -465,6 +499,20 @@ export class Game {
     }
   }
   
+  getRandomColor() {
+    const colors = [
+      '#ff5252', // Red
+      '#4caf50', // Green
+      '#2196f3', // Blue
+      '#ff9800', // Orange
+      '#9c27b0', // Purple
+      '#00bcd4', // Cyan
+      '#ffeb3b', // Yellow
+      '#e91e63'  // Pink
+    ];
+    return colors[Math.floor(Math.random() * colors.length)];
+  }
+  
   gameLoop(timestamp) {
     // Calculate delta time
     if (!timestamp) timestamp = performance.now();
@@ -508,6 +556,7 @@ export class Game {
       this.animationId = requestAnimationFrame((t) => this.gameLoop(t));
     }
   }
+  
   update(deltaTime) {
     // Scale delta time by time scale (for slow-motion effects)
     const scaledDeltaTime = deltaTime * this.timeScale;
@@ -781,458 +830,4 @@ export class Game {
     
     // Remove power-ups
     if (this.removalQueues.powerUps.length > 0) {
-      this.powerUps = this.powerUps.filter(powerUp => !this.removalQueues.powerUps.includes(powerUp));
-      this.removalQueues.powerUps = [];
-    }
-    
-    // Remove AIs
-    if (this.removalQueues.ais.length > 0) {
-      // Remove AIs from teams first
-      this.removalQueues.ais.forEach(ai => {
-        if (ai.team) {
-          const teamPlayers = this.teams[ai.team].players;
-          const index = teamPlayers.indexOf(ai);
-          if (index !== -1) {
-            teamPlayers.splice(index, 1);
-          }
-        }
-      });
-      
-      // Then remove from main AI list
-      this.ais = this.ais.filter(ai => !this.removalQueues.ais.includes(ai));
-      this.removalQueues.ais = [];
-    }
-  }
-  
-  // Helper methods for entity removal
-  removeFood(food) {
-    this.removalQueues.foods.push(food);
-  }
-  
-  removeVirus(virus) {
-    this.removalQueues.viruses.push(virus);
-  }
-  
-  removePowerUp(powerUp) {
-    this.removalQueues.powerUps.push(powerUp);
-  }
-  
-  removeAI(ai) {
-    this.removalQueues.ais.push(ai);
-  }
-  
-  updateSpatialGrid() {
-    // Clear the grid
-    this.spatialGrid = {};
-    
-    // Helper function to add entity to grid
-    const addToGrid = (entity, type) => {
-      const cellX = Math.floor(entity.x / this.gridCellSize);
-      const cellY = Math.floor(entity.y / this.gridCellSize);
-      const cellKey = `${cellX},${cellY}`;
-      
-      if (!this.spatialGrid[cellKey]) {
-        this.spatialGrid[cellKey] = { 
-          foods: [], 
-          ais: [], 
-          viruses: [], 
-          powerUps: [],
-          player: []
-        };
-      }
-      
-      this.spatialGrid[cellKey][type].push(entity);
-    };
-    
-    // Add foods to grid
-    this.foods.forEach(food => addToGrid(food, 'foods'));
-    
-    // Add AIs to grid
-    this.ais.forEach(ai => {
-      if (ai && ai.cells) {
-        ai.cells.forEach(cell => {
-          if (cell) {
-            // Create a temporary entity with the cell's position and radius
-            const cellEntity = {
-              x: cell.x,
-              y: cell.y,
-              radius: cell.radius,
-              parent: ai,
-              cell: cell
-            };
-            addToGrid(cellEntity, 'ais');
-          }
-        });
-      }
-    });
-    
-    // Add viruses to grid
-    this.viruses.forEach(virus => {
-      if (virus) {
-        addToGrid(virus, 'viruses');
-      }
-    });
-    
-    // Add power-ups to grid
-    this.powerUps.forEach(powerUp => {
-      if (powerUp) {
-        addToGrid(powerUp, 'powerUps');
-      }
-    });
-    
-    // Add player cells to grid
-    if (this.player && !this.player.isDead && this.player.cells) {
-      this.player.cells.forEach(cell => {
-        if (cell) {
-          // Create a temporary entity with the cell's position and radius
-          const cellEntity = {
-            x: cell.x,
-            y: cell.y,
-            radius: cell.radius,
-            parent: this.player,
-            cell: cell
-          };
-          addToGrid(cellEntity, 'player');
-        }
-      });
-    }
-  }
-  
-  getEntitiesInRange(x, y, radius, types = ['foods', 'ais', 'viruses', 'powerUps', 'player']) {
-    const result = {};
-    types.forEach(type => result[type] = []);
-    
-    // Calculate grid cells that could contain entities within range
-    const cellRadius = Math.ceil(radius / this.gridCellSize) + 1;
-    const centerCellX = Math.floor(x / this.gridCellSize);
-    const centerCellY = Math.floor(y / this.gridCellSize);
-    
-    for (let cellX = centerCellX - cellRadius; cellX <= centerCellX + cellRadius; cellX++) {
-      for (let cellY = centerCellY - cellRadius; cellY <= centerCellY + cellRadius; cellY++) {
-        const cellKey = `${cellX},${cellY}`;
-        
-        if (this.spatialGrid[cellKey]) {
-          types.forEach(type => {
-            if (this.spatialGrid[cellKey][type]) {
-              this.spatialGrid[cellKey][type].forEach(entity => {
-                if (entity) {
-                  const dx = entity.x - x;
-                  const dy = entity.y - y;
-                  const distance = Math.sqrt(dx * dx + dy * dy);
-                  
-                  if (distance <= radius + (entity.radius || 0)) {
-                    result[type].push(entity);
-                    this.stats.collisionsChecked++;
-                  }
-                }
-              });
-            }
-          });
-        }
-      }
-    }
-    
-    return result;
-  }
-  
-  updateVisibleEntities() {
-    // Calculate viewport bounds with some margin
-    const viewportLeft = this.camera.x - this.width / (2 * this.camera.scale) - 100;
-    const viewportRight = this.camera.x + this.width / (2 * this.camera.scale) + 100;
-    const viewportTop = this.camera.y - this.height / (2 * this.camera.scale) - 100;
-    const viewportBottom = this.camera.y + this.height / (2 * this.camera.scale) + 100;
-    
-    // Filter visible entities
-    this.visibleEntities.foods = this.foods.filter(food => 
-      food.x + food.radius > viewportLeft &&
-      food.x - food.radius < viewportRight &&
-      food.y + food.radius > viewportTop &&
-      food.y - food.radius < viewportBottom
-    );
-    
-    this.visibleEntities.ais = this.ais.filter(ai => 
-      !ai.isDead && ai.x + ai.radius > viewportLeft &&
-      ai.x - ai.radius < viewportRight &&
-      ai.y + ai.radius > viewportTop &&
-      ai.y - ai.radius < viewportBottom
-    );
-    
-    this.visibleEntities.viruses = this.viruses.filter(virus => 
-      virus.x + virus.radius > viewportLeft &&
-      virus.x - virus.radius < viewportRight &&
-      virus.y + virus.radius > viewportTop &&
-      virus.y - virus.radius < viewportBottom
-    );
-    
-    this.visibleEntities.powerUps = this.powerUps.filter(powerUp => 
-      powerUp.x + powerUp.radius > viewportLeft &&
-      powerUp.x - powerUp.radius < viewportRight &&
-      powerUp.y + powerUp.radius > viewportTop &&
-      powerUp.y - powerUp.radius < viewportBottom
-    );
-    
-    // Update stats
-    this.stats.entitiesRendered = 
-      this.visibleEntities.foods.length + 
-      this.visibleEntities.ais.length + 
-      this.visibleEntities.viruses.length + 
-      this.visibleEntities.powerUps.length;
-  }
-  
-  updateBattleRoyale(deltaTime) {
-    if (!this.battleRoyaleState.active) return;
-    
-    const now = this.gameTime;
-    
-    // Check if we need to show warning
-    if (!this.battleRoyaleState.isWarning && 
-        now >= this.battleRoyaleState.nextShrinkTime - this.battleRoyaleState.warningTime) {
-      this.battleRoyaleState.isWarning = true;
-      this.showAnnouncement("Warning: Safe zone will shrink soon!", 5000);
-      this.soundManager.playSound('battleRoyaleWarning');
-    }
-    
-    // Check if it's time to shrink
-    if (now >= this.battleRoyaleState.nextShrinkTime) {
-      // Start a new shrink phase
-      this.battleRoyaleState.shrinkStartTime = now;
-      this.battleRoyaleState.nextShrinkTime = now + this.battleRoyaleState.shrinkDuration + 30; // 30 seconds pause between shrinks
-      this.battleRoyaleState.isWarning = false;
-      
-      // Calculate new target radius
-      const currentRadius = this.battleRoyaleState.safeZoneRadius;
-      this.battleRoyaleState.previousRadius = currentRadius;
-      this.battleRoyaleState.targetRadius = Math.max(this.battleRoyaleState.minRadius, currentRadius * 0.7);
-      
-      // Move safe zone center slightly
-      const moveDistance = this.battleRoyaleState.safeZoneRadius * 0.2;
-      const moveAngle = Math.random() * Math.PI * 2;
-      const newX = this.battleRoyaleState.safeZoneX + Math.cos(moveAngle) * moveDistance;
-      const newY = this.battleRoyaleState.safeZoneY + Math.sin(moveAngle) * moveDistance;
-      
-      // Keep within world bounds
-      this.battleRoyaleState.safeZoneX = Math.max(this.battleRoyaleState.targetRadius, 
-        Math.min(this.worldSize - this.battleRoyaleState.targetRadius, newX));
-      this.battleRoyaleState.safeZoneY = Math.max(this.battleRoyaleState.targetRadius, 
-        Math.min(this.worldSize - this.battleRoyaleState.targetRadius, newY));
-      
-      this.showAnnouncement("Safe zone is shrinking!", 3000);
-      this.soundManager.playSound('battleRoyaleShrink');
-    }
-    
-    // Update shrinking
-    if (now >= this.battleRoyaleState.shrinkStartTime && 
-        now < this.battleRoyaleState.shrinkStartTime + this.battleRoyaleState.shrinkDuration) {
-      
-      const elapsed = now - this.battleRoyaleState.shrinkStartTime;
-      const progress = Math.min(1, elapsed / this.battleRoyaleState.shrinkDuration);
-      
-      // Shrink safe zone
-      const previousRadius = this.battleRoyaleState.previousRadius;
-      const targetRadius = this.battleRoyaleState.targetRadius;
-      this.battleRoyaleState.safeZoneRadius = previousRadius - (previousRadius - targetRadius) * progress;
-      
-      // Increase damage as zone shrinks
-      this.battleRoyaleState.damagePerSecond = 5 + (10 * progress);
-    }
-  }
-  
-  startBattleRoyale() {
-    this.battleRoyaleState.active = true;
-    this.battleRoyaleState.shrinkStartTime = this.gameTime + 30; // Start shrinking after 30 seconds
-    this.battleRoyaleState.nextShrinkTime = this.gameTime + 30;
-    this.battleRoyaleState.previousRadius = this.worldSize / 2;
-    this.battleRoyaleState.safeZoneRadius = this.worldSize / 2;
-    this.battleRoyaleState.safeZoneX = this.worldSize / 2;
-    this.battleRoyaleState.safeZoneY = this.worldSize / 2;
-    
-    this.soundManager.playSound('battleRoyaleStart');
-    
-    // Display announcement
-    this.showAnnouncement('Battle Royale has begun! Safe zone will shrink soon!', 5000);
-  }
-  
-  updateTeamScores() {
-    // Reset scores
-    Object.keys(this.teams).forEach(team => {
-      this.teams[team].score = 0;
-    });
-    
-    // Add player scores
-    if (this.player && !this.player.isDead && this.player.team) {
-      this.teams[this.player.team].score += this.player.score;
-    }
-    
-    // Add AI scores
-    this.ais.forEach(ai => {
-      if (!ai.isDead && ai.team) {
-        this.teams[ai.team].score += ai.score;
-      }
-    });
-    
-    // Check for team victory conditions
-    const teamScores = Object.entries(this.teams).map(([team, data]) => ({
-      team,
-      score: data.score
-    }));
-    
-    teamScores.sort((a, b) => b.score - a.score);
-    
-    // If top team has 2x the score of second team and above threshold, they win
-    if (teamScores.length >= 2 && 
-        teamScores[0].score > 10000 && 
-        teamScores[0].score > teamScores[1].score * 2) {
-      
-      // Team victory!
-      if (!this.teamVictoryAnnounced) {
-        this.teamVictoryAnnounced = true;
-        this.showAnnouncement(`Team ${teamScores[0].team.toUpperCase()} is dominating!`, 5000);
-        
-        // If player is on winning team, grant achievement
-        if (this.player && this.player.team === teamScores[0].team) {
-          this.achievements.unlock('team_victory');
-        }
-      }
-    } else {
-      this.teamVictoryAnnounced = false;
-    }
-  }
-  
-  render() {
-    const renderStart = performance.now();
-    
-    // Clear canvas
-    this.ctx.clearRect(0, 0, this.width, this.height);
-    
-    // Save context state
-    this.ctx.save();
-    
-    // Apply camera transformation
-    this.ctx.translate(this.width / 2, this.height / 2);
-    this.ctx.scale(this.camera.scale, this.camera.scale);
-    this.ctx.translate(-this.camera.x, -this.camera.y);
-    
-    // Draw background pattern
-    this.drawBackground();
-    
-    // Draw grid
-    this.drawGrid();
-    
-    // Draw world border
-    this.drawWorldBorder();
-    
-    // Draw battle royale safe zone
-    if (this.gameMode === 'battle-royale' && this.battleRoyaleState.active) {
-      this.drawSafeZone();
-    }
-    
-    // Collect all entities for z-index sorting
-    const allEntities = [];
-    
-    // Add food (only visible ones)
-    this.visibleEntities.foods.forEach(food => {
-      allEntities.push({
-        entity: food,
-        type: 'food',
-        z: 0,
-        x: food.x,
-        y: food.y
-      });
-    });
-    
-    // Add viruses (only visible ones)
-    this.visibleEntities.viruses.forEach(virus => {
-      allEntities.push({
-        entity: virus,
-        type: 'virus',
-        z: 5, // Viruses are above most entities
-        x: virus.x,
-        y: virus.y
-      });
-    });
-    
-    // Add power-ups (only visible ones)
-    this.visibleEntities.powerUps.forEach(powerUp => {
-      allEntities.push({
-        entity: powerUp,
-        type: 'powerUp',
-        z: 1,
-        x: powerUp.x,
-        y: powerUp.y
-      });
-    });
-    
-    // Add AI cells (only visible ones)
-    this.visibleEntities.ais.forEach(ai => {
-      if (ai.isDead) return;
-      
-      ai.cells.forEach(cell => {
-        allEntities.push({
-          entity: ai,
-          cell: cell,
-          type: 'ai',
-          z: cell.z || 10, // Default z-index for cells
-          x: cell.x,
-          y: cell.y
-        });
-      });
-    });
-    
-    // Add player cells
-    if (this.player && !this.player.isDead) {
-      this.player.cells.forEach(cell => {
-        allEntities.push({
-          entity: this.player,
-          cell: cell,
-          type: 'player',
-          z: cell.z || 10, // Default z-index for cells
-          x: cell.x,
-          y: cell.y
-        });
-      });
-    }
-    
-    // Sort entities by z-index (lower z-index is drawn first)
-    allEntities.sort((a, b) => a.z - b.z);
-    
-    // Draw particles below entities
-    this.particles.draw(this.ctx);
-    
-    // Draw all entities in order
-    allEntities.forEach(item => {
-      switch (item.type) {
-        case 'food':
-          item.entity.draw(this.ctx);
-          break;
-        case 'virus':
-          item.entity.draw(this.ctx);
-          break;
-        case 'powerUp':
-          item.entity.draw(this.ctx);
-          break;
-        case 'ai':
-          // Draw only this specific cell
-          this.drawAICell(this.ctx, item.entity, item.cell);
-          break;
-        case 'player':
-          // Draw only this specific cell
-          this.drawPlayerCell(this.ctx, item.entity, item.cell);
-          break;
-      }
-    });
-    
-    // Restore context state
-    this.ctx.restore();
-    
-    // Draw UI elements
-    this.drawUI();
-    
-    // Draw debug info if enabled
-    if (this.debugMode) {
-      this.drawDebugInfo();
-    }
-    
-    this.stats.renderTime = performance.now() - renderStart;
-  }
-}
-
+      this.powerUps = this.power
